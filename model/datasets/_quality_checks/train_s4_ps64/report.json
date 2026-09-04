@@ -1,0 +1,229 @@
+{
+  "tiff": "data\\sample_sentinel2_10m.tif",
+  "split": "train",
+  "scale_factor": 4,
+  "patch_size": 64,
+  "n_samples": 4,
+  "scene_metadata": {
+    "source_file": "data\\sample_sentinel2_10m.tif",
+    "bands": [
+      "B02",
+      "B03",
+      "B04",
+      "B08"
+    ],
+    "crs": "EPSG:32643",
+    "height": 256,
+    "width": 256,
+    "gsd_meters": 10.0,
+    "nodata": 0.0,
+    "value_range_hr": [
+      0.1273999959230423,
+      0.7013000249862671
+    ]
+  },
+  "all_dim_checks_pass": true,
+  "all_channel_checks_pass": true,
+  "all_range_checks_pass": true,
+  "all_alignment_checks_pass": true,
+  "mean_lr_nodata_fraction": 0.0,
+  "mean_hr_nodata_fraction": 0.0,
+  "reports": [
+    {
+      "index": 5,
+      "patch_index": 5,
+      "tile_yx": [
+        0,
+        192
+      ],
+      "bands": [
+        "B02",
+        "B03",
+        "B04",
+        "B08"
+      ],
+      "lr_shape": [
+        16,
+        16
+      ],
+      "hr_shape": [
+        64,
+        64
+      ],
+      "scale_factor": 4,
+      "dim_check_pass": true,
+      "channels_lr": 4,
+      "channels_hr": 4,
+      "channel_check_pass": true,
+      "lr_value_range": [
+        0.11969999969005585,
+        0.7092000246047974
+      ],
+      "hr_value_range": [
+        0.1273999959230423,
+        0.7009999752044678
+      ],
+      "range_check_pass": true,
+      "nodata_present": false,
+      "lr_nodata_fraction": 0.0,
+      "hr_nodata_fraction": 0.0,
+      "alignment_check": {
+        "lr_upsampled_shape": [
+          64,
+          64
+        ],
+        "aligns_to_hr": true
+      }
+    },
+    {
+      "index": 0,
+      "patch_index": 0,
+      "tile_yx": [
+        64,
+        128
+      ],
+      "bands": [
+        "B02",
+        "B03",
+        "B04",
+        "B08"
+      ],
+      "lr_shape": [
+        16,
+        16
+      ],
+      "hr_shape": [
+        64,
+        64
+      ],
+      "scale_factor": 4,
+      "dim_check_pass": true,
+      "channels_lr": 4,
+      "channels_hr": 4,
+      "channel_check_pass": true,
+      "lr_value_range": [
+        0.11749999970197678,
+        0.6962000131607056
+      ],
+      "hr_value_range": [
+        0.1273999959230423,
+        0.7010999917984009
+      ],
+      "range_check_pass": true,
+      "nodata_present": false,
+      "lr_nodata_fraction": 0.0,
+      "hr_nodata_fraction": 0.0,
+      "alignment_check": {
+        "lr_upsampled_shape": [
+          64,
+          64
+        ],
+        "aligns_to_hr": true
+      }
+    },
+    {
+      "index": 7,
+      "patch_index": 7,
+      "tile_yx": [
+        64,
+        192
+      ],
+      "bands": [
+        "B02",
+        "B03",
+        "B04",
+        "B08"
+      ],
+      "lr_shape": [
+        16,
+        16
+      ],
+      "hr_shape": [
+        64,
+        64
+      ],
+      "scale_factor": 4,
+      "dim_check_pass": true,
+      "channels_lr": 4,
+      "channels_hr": 4,
+      "channel_check_pass": true,
+      "lr_value_range": [
+        0.12120000272989273,
+        0.695900022983551
+      ],
+      "hr_value_range": [
+        0.1274999976158142,
+        0.7013000249862671
+      ],
+      "range_check_pass": true,
+      "nodata_present": false,
+      "lr_nodata_fraction": 0.0,
+      "hr_nodata_fraction": 0.0,
+      "alignment_check": {
+        "lr_upsampled_shape": [
+          64,
+          64
+        ],
+        "aligns_to_hr": true
+      }
+    },
+    {
+      "index": 8,
+      "patch_index": 8,
+      "tile_yx": [
+        192,
+        0
+      ],
+      "bands": [
+        "B02",
+        "B03",
+        "B04",
+        "B08"
+      ],
+      "lr_shape": [
+        16,
+        16
+      ],
+      "hr_shape": [
+        64,
+        64
+      ],
+      "scale_factor": 4,
+      "dim_check_pass": true,
+      "channels_lr": 4,
+      "channels_hr": 4,
+      "channel_check_pass": true,
+      "lr_value_range": [
+        0.11100000143051147,
+        0.6948999762535095
+      ],
+      "hr_value_range": [
+        0.1273999959230423,
+        0.7013000249862671
+      ],
+      "range_check_pass": true,
+      "nodata_present": false,
+      "lr_nodata_fraction": 0.0,
+      "hr_nodata_fraction": 0.0,
+      "alignment_check": {
+        "lr_upsampled_shape": [
+          64,
+          64
+        ],
+        "aligns_to_hr": true
+      }
+    }
+  ],
+  "outputs": [
+    "model\\datasets\\_quality_checks\\train_s4_ps64\\sample_00_idx001.png",
+    "model\\datasets\\_quality_checks\\train_s4_ps64\\sample_00_idx005.png",
+    "model\\datasets\\_quality_checks\\train_s4_ps64\\sample_00_idx009.png",
+    "model\\datasets\\_quality_checks\\train_s4_ps64\\sample_01_idx000.png",
+    "model\\datasets\\_quality_checks\\train_s4_ps64\\sample_01_idx006.png",
+    "model\\datasets\\_quality_checks\\train_s4_ps64\\sample_02_idx005.png",
+    "model\\datasets\\_quality_checks\\train_s4_ps64\\sample_02_idx007.png",
+    "model\\datasets\\_quality_checks\\train_s4_ps64\\sample_03_idx008.png",
+    "model\\datasets\\_quality_checks\\train_s4_ps64\\sample_03_idx011.png",
+    "model\\datasets\\_quality_checks\\train_s4_ps64\\sample_04_idx004.png"
+  ]
+}

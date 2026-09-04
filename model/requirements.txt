@@ -1,0 +1,9 @@
+# GeoSR model dependencies (Phase 4 - training data pipeline)
+# Install with:  pip install -r model/requirements.txt
+
+torch>=2.13.0
+numpy>=1.26.0
+rasterio>=1.3.0
+scipy>=1.11.0          # Gaussian blur in the degradation model
+matplotlib>=3.7.0      # quality-check visualizations
+Pillow>=10.0.0         # image compositing for quality checks

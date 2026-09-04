@@ -1,0 +1,82 @@
+{
+  "tiff": "data\\sample_sentinel2_10m.tif",
+  "split": "test",
+  "scale_factor": 4,
+  "patch_size": 64,
+  "n_samples": 1,
+  "scene_metadata": {
+    "source_file": "data\\sample_sentinel2_10m.tif",
+    "bands": [
+      "B02",
+      "B03",
+      "B04",
+      "B08"
+    ],
+    "crs": "EPSG:32643",
+    "height": 256,
+    "width": 256,
+    "gsd_meters": 10.0,
+    "nodata": 0.0,
+    "value_range_hr": [
+      0.1273999959230423,
+      0.7013000249862671
+    ]
+  },
+  "all_dim_checks_pass": true,
+  "all_channel_checks_pass": true,
+  "all_range_checks_pass": true,
+  "all_alignment_checks_pass": true,
+  "mean_lr_nodata_fraction": 0.0,
+  "mean_hr_nodata_fraction": 0.0,
+  "reports": [
+    {
+      "index": 0,
+      "patch_index": 0,
+      "tile_yx": [
+        128,
+        0
+      ],
+      "bands": [
+        "B02",
+        "B03",
+        "B04",
+        "B08"
+      ],
+      "lr_shape": [
+        16,
+        16
+      ],
+      "hr_shape": [
+        64,
+        64
+      ],
+      "scale_factor": 4,
+      "dim_check_pass": true,
+      "channels_lr": 4,
+      "channels_hr": 4,
+      "channel_check_pass": true,
+      "lr_value_range": [
+        0.12060000002384186,
+        0.7006000280380249
+      ],
+      "hr_value_range": [
+        0.1273999959230423,
+        0.701200008392334
+      ],
+      "range_check_pass": true,
+      "nodata_present": false,
+      "lr_nodata_fraction": 0.0,
+      "hr_nodata_fraction": 0.0,
+      "alignment_check": {
+        "lr_upsampled_shape": [
+          64,
+          64
+        ],
+        "aligns_to_hr": true
+      }
+    }
+  ],
+  "outputs": [
+    "model\\datasets\\_quality_checks\\test_s4_ps64\\sample_00_idx000.png"
+  ]
+}
