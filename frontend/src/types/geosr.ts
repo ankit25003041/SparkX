@@ -32,6 +32,7 @@ export type ViewMode =
   | 'magnifier'; // Real-time zoom loupe
 
 export interface GeoTIFFMetadata {
+  jobId?: string;
   filename: string;
   filesizeBytes: number;
   width: number;
@@ -45,7 +46,8 @@ export interface GeoTIFFMetadata {
   cloudCoverPercent: number;
   sensor: string; // 'Sentinel-2 MSI Level-2A'
   acquisitionDate: string;
-  bandsAvailable: SpectralBandId[];
+  bandsAvailable: SpectralBandId[] | string[];
+  previewUrl?: string;
 }
 
 export interface SpectralPoint {

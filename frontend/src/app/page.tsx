@@ -57,12 +57,43 @@ export default function GeoSRDashboardPage() {
   // Handle File Upload
   const handleFileUpload = async (file: File) => {
     try {
+      setProcessingState({
+        status: 'uploading',
+        stage: 'Uploading and parsing GeoTIFF headers with Rasterio...',
+        progress: 10,
+        elapsedSeconds: 0,
+      });
+
       const meta = await geoSRApi.inspectGeoTIFF(file);
       setCustomMetadata(meta);
       setCurrentCoords(meta.center);
-    } catch (err) {
+
+      // Set custom preview image if available
+      if (meta.previewUrl) {
+        setSelectedPreset((prev) => ({
+          ...prev,
+          title: meta.filename,
+          location: `Uploaded GeoTIFF (${meta.crs.split(' ')[0]})`,
+          lowResImageUrl: meta.previewUrl || prev.lowResImageUrl,
+          coordinates: meta.center,
+          crs: meta.crs,
+        }));
+      }
+
+      setProcessingState({
+        status: 'idle',
+        progress: 0,
+        elapsedSeconds: 0,
+      });
+    } catch (err: any) {
       console.error('Failed to parse uploaded file:', err);
-      alert('Could not parse GeoTIFF headers. Please ensure the file has valid projection tags.');
+      setProcessingState({
+        status: 'error',
+        progress: 0,
+        elapsedSeconds: 0,
+        errorMessage: err.message || 'Could not parse GeoTIFF headers. Please ensure the file is valid.',
+      });
+      alert(`Upload Error: ${err.message || 'Could not parse GeoTIFF headers.'}`);
     }
   };
 
@@ -78,7 +109,7 @@ export default function GeoSRDashboardPage() {
     try {
       const result = await geoSRApi.submitSuperResolutionJob(
         {
-          file: customMetadata ? undefined : undefined,
+          jobId: customMetadata?.jobId,
           presetId: selectedPreset.id,
           model: selectedModel,
           scaleFactor: scaleFactor,
@@ -103,6 +134,15 @@ export default function GeoSRDashboardPage() {
 
       if (result.metrics) {
         setMetrics(result.metrics);
+      }
+
+      // Update preset visualizer URLs if custom file was processed
+      if (result.superResImageUrl || result.uncertaintyMapUrl) {
+        setSelectedPreset((prev) => ({
+          ...prev,
+          superResImageUrl: result.superResImageUrl || prev.superResImageUrl,
+          uncertaintyMapUrl: result.uncertaintyMapUrl || prev.uncertaintyMapUrl,
+        }));
       }
     } catch (e: any) {
       setProcessingState({
