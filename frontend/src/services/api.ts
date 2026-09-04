@@ -18,6 +18,8 @@ import {
   generatePipelineLogs
 } from '../lib/mockData';
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
 export interface SRJobSubmission {
   jobId?: string;
   file?: File;
@@ -116,7 +118,7 @@ class GeoSRApiService {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.detail || `Upload failed with status ${res.status}`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn('Backend upload failed, falling back to client-side inspector simulator:', err);
       
       // Phase 1 fallback simulator if server is unavailable
@@ -142,14 +144,16 @@ class GeoSRApiService {
   }
 
   /**
-   * Submit Super-Resolution Inference Job via POST /api/jobs/{job_id}/process
-   * and poll status via GET /api/jobs/{job_id}/status
+   * Submit Super-Resolution Inference Job.
+   * Case 1 (jobId present): calls the live backend pipeline + polls status.
+   * Case 2 (preset / no jobId): runs a client-side multi-stage progress simulation.
    */
   async submitSuperResolutionJob(
     params: SRJobSubmission,
     onProgress: (progress: JobProgressResponse) => void
   ): Promise<JobProgressResponse> {
     const matchedPreset = SCENE_PRESETS.find((p) => p.id === params.presetId) || SCENE_PRESETS[0];
+    const jobId = params.jobId || ('geosr_job_' + Math.random().toString(36).substring(2, 9));
 
     // Case 1: Job was created via GeoTIFF Upload (Real Backend Pipeline)
     if (params.jobId) {
@@ -188,8 +192,8 @@ class GeoSRApiService {
           onProgress({
             jobId: params.jobId,
             status: statusData.status === 'COMPLETED' ? 'completed' 
-                  : statusData.status === 'FAILED' ? 'failed' 
-                  : 'processing',
+                : statusData.status === 'FAILED' ? 'failed' 
+                : 'processing',
             stage: statusData.stage || 'Executing SRM DL Pipeline...',
             progressPercent: statusData.progress || 0,
             elapsedMs: elapsed,
@@ -227,17 +231,17 @@ class GeoSRApiService {
             throw new Error(statusData.error_message || 'Pipeline execution failed on server');
           }
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.warn('Real backend processing failed or interrupted:', e);
-        // If error is genuine rejection, rethrow
-        if (e.message && !e.message.includes('fetch')) {
+        // If error is a genuine rejection (not just a network/fetch failure), rethrow
+        const errMsg = e instanceof Error ? e.message : String(e);
+        if (errMsg && !errMsg.includes('fetch')) {
           throw e;
         }
       }
     }
 
     // Case 2: Preset Scene / Fallback Multi-Stage Progress Simulation
-    const jobId = 'geosr_job_' + Math.random().toString(36).substring(2, 9);
     const stages = [
       { name: 'Reading Sentinel-2 GeoTIFF Geotransform & Projection...', progress: 15, delay: 350 },
       { name: 'Extracting 12-Band BOA Reflectance Arrays & Normalization...', progress: 35, delay: 450 },
@@ -246,6 +250,31 @@ class GeoSRApiService {
       { name: 'Spectral Angle & Radiometric Uncertainty Validation...', progress: 100, delay: 350 },
     ];
 
+    const startTime = Date.now();
+    for (const stage of stages) {
+      await new Promise((r) => setTimeout(r, stage.delay));
+      onProgress({
+        jobId,
+        status: stage.progress === 100 ? 'completed' : 'processing',
+        stage: stage.name,
+        progressPercent: stage.progress,
+        elapsedMs: Date.now() - startTime,
+      });
+    }
+
+    return {
+      jobId,
+      status: 'completed',
+      stage: 'Super-Resolution Reconstruction Finished Successfully',
+      progressPercent: 100,
+      elapsedMs: Date.now() - startTime,
+      metrics: matchedPreset.defaultMetrics,
+      superResImageUrl: matchedPreset.superResImageUrl,
+      uncertaintyMapUrl: matchedPreset.uncertaintyMapUrl,
+      isDemo: true,
+    };
+  }
+
   /**
    * Fetch Preset Scene by ID
    */
@@ -253,27 +282,11 @@ class GeoSRApiService {
     return SCENE_PRESETS.find((p) => p.id === id);
   }
 
-    const multiplier = params.model === 'geosr_esrgan' ? 1.0 : params.model === 'rcan_sat' ? 1.02 : params.model === 'swin_sr_geo' ? 1.04 : 0.88;
-
-    // If ID matches a scene or new generated ID, synthesize an analysis record
-    const matchedPreset = SCENE_PRESETS.find((p) => p.id === id || id.includes(p.id.replace('s2_', ''))) || SCENE_PRESETS[0];
-
-    return {
-      id,
-      title: matchedPreset.title,
-      location: matchedPreset.location,
-      sceneId: matchedPreset.id,
-      model: 'geosr_esrgan',
-      scaleFactor: 4,
-      status: 'completed',
-      stage: 'Super-Resolution Reconstruction Finished Successfully (Demo Preset)',
-      progressPercent: 100,
-      elapsedMs: Date.now() - start,
-      metrics,
-      superResImageUrl: matchedPreset.superResImageUrl,
-      uncertaintyMapUrl: matchedPreset.uncertaintyMapUrl,
-      isDemo: true,
-    };
+  /**
+   * Fetch recent analyses
+   */
+  async getRecentAnalyses(): Promise<AnalysisRecord[]> {
+    return RECENT_ANALYSES;
   }
 
   /**

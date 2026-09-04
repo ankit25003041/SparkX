@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { 
   ScenePreset, 
@@ -14,6 +14,24 @@ import {
   SpectralPoint
 } from '../types/geosr';
 import { geoSRApi } from '../services/api';
+import { SCENE_PRESETS, SYSTEM_TELEMETRY, RECENT_ANALYSES } from '../lib/mockData';
+import { StatusBadge } from '../components/StatusBadge';
+import { MetricCard } from '../components/MetricCard';
+import { AnalysisCard } from '../components/AnalysisCard';
+import { 
+  Sparkles, 
+  ArrowRight, 
+  Upload, 
+  Map, 
+  BarChart3, 
+  Activity, 
+  Zap, 
+  Layers, 
+  ShieldCheck, 
+  Compass, 
+  Clock,
+  SlidersHorizontal
+} from 'lucide-react';
 
 export default function GeoSRDashboardPage() {
   const [selectedPreset, setSelectedPreset] = useState<ScenePreset>(SCENE_PRESETS[0]);
@@ -36,6 +54,17 @@ export default function GeoSRDashboardPage() {
 
   const [isArchitectureModalOpen, setIsArchitectureModalOpen] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+
+  // Recent analyses + category filtering
+  const [filterCategory, setFilterCategory] = useState<string>('All');
+  const analyses = RECENT_ANALYSES;
+  const filteredAnalyses = useMemo(() => {
+    if (filterCategory === 'All') return analyses;
+    return analyses.filter((a) => {
+      const preset = SCENE_PRESETS.find((p) => p.id === a.sceneId);
+      return preset?.category === filterCategory;
+    });
+  }, [filterCategory, analyses]);
 
   // Handle Preset Selection
   const handleSelectPreset = (preset: ScenePreset) => {
@@ -78,15 +107,16 @@ export default function GeoSRDashboardPage() {
         progress: 0,
         elapsedSeconds: 0,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Could not parse GeoTIFF headers. Please ensure the file is valid.';
       console.error('Failed to parse uploaded file:', err);
       setProcessingState({
         status: 'error',
         progress: 0,
         elapsedSeconds: 0,
-        errorMessage: err.message || 'Could not parse GeoTIFF headers. Please ensure the file is valid.',
+        errorMessage: errMsg,
       });
-      alert(`Upload Error: ${err.message || 'Could not parse GeoTIFF headers.'}`);
+      alert(`Upload Error: ${errMsg}`);
     }
   };
 
@@ -137,13 +167,17 @@ export default function GeoSRDashboardPage() {
           uncertaintyMapUrl: result.uncertaintyMapUrl || prev.uncertaintyMapUrl,
         }));
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : 'Super-Resolution inference failed';
       setProcessingState({
         status: 'error',
         progress: 0,
         elapsedSeconds: 0,
-        errorMessage: e.message || 'Super-Resolution inference failed',
+        errorMessage: errMsg,
       });
+
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">

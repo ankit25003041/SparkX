@@ -240,9 +240,9 @@ export default function UploadPage() {
                       >
                         <div className="flex items-center justify-between text-xs font-semibold text-white">
                           <span>{model.name}</span>
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-cyan-400 border border-slate-800">
-                            {model.speed}
-                          </span>
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-cyan-400 border border-slate-800">
+                              {model.speedRating}
+                            </span>
                         </div>
                         <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
                           {model.description}

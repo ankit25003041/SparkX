@@ -75,7 +75,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <div className="flex items-center justify-between text-slate-300 font-medium">
                 <span>{model.name}</span>
-                <span className="text-[10px] font-mono text-cyan-400">{model.speed}</span>
+                <span className="text-[10px] font-mono text-cyan-400">{model.speedRating}</span>
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
                 {model.description}
