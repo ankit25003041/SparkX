@@ -226,8 +226,8 @@ export const MapComparisonViewer: React.FC<MapComparisonViewerProps> = ({
                     alt="Original Sentinel-2"
                     className="w-full h-full object-cover"
                     style={{
-                      width: containerRef.current?.clientWidth ? `${containerRef.current.clientWidth - 32}px` : '100%',
-                      height: containerRef.current?.clientHeight ? `${containerRef.current.clientHeight - 80}px` : '100%',
+                      width: '100%',
+                      height: '100%',
                     }}
                   />
                 </div>

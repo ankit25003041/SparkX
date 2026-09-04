@@ -18,10 +18,29 @@ export type BandCombination =
   | 'NDVI_HEATMAP'; // Normalized Difference Vegetation Index
 
 export type SuperResolutionModelId = 
-  | 'bicubic_baseline'
-  | 'rcan_sat'
   | 'geosr_esrgan'
-  | 'swin_sr_geo';
+  | 'swin_sr_geo'
+  | 'rcan_sat'
+  | 'bicubic_baseline';
+
+export interface ModelOption {
+  id: SuperResolutionModelId;
+  name: string;
+  architecture: string;
+  description: string;
+  targetMetric: string;
+  recommendedFor: string;
+  speed: 'Fast' | 'Balanced' | 'Precision';
+  parameters?: string;
+  spectralPreservationScore?: number;
+  speedRating?: string;
+}
+
+export interface TransectSample {
+  distanceMeters: number;
+  originalValue: number;
+  srValue: number;
+}
 
 export type ScaleFactor = 2 | 4; // 2x: 10m -> 5m, 4x: 10m -> 2.5m
 
@@ -55,12 +74,6 @@ export interface SpectralPoint {
   originalReflectance: number; // 0.0 - 1.0 (or scaled DN)
   srReflectance: number; // 0.0 - 1.0
   diffPercent: number;
-}
-
-export interface TransectSample {
-  distanceMeters: number;
-  originalValue: number;
-  srValue: number;
 }
 
 export interface ValidationMetrics {
@@ -99,9 +112,72 @@ export interface ScenePreset {
   spectralPoints: SpectralPoint[];
 }
 
+export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+
+export interface AnalysisRecord {
+  id: string;
+  title: string;
+  location: string;
+  sceneId: string;
+  model: SuperResolutionModelId;
+  scaleFactor: ScaleFactor;
+  status: JobStatus;
+  createdAt: string;
+  elapsedMs: number;
+  metrics: ValidationMetrics;
+  lowResImageUrl: string;
+  superResImageUrl: string;
+  uncertaintyMapUrl: string;
+  crs: string;
+  coordinates: [number, number];
+  cloudCoverPercent: number;
+  filesizeBytes: number;
+}
+
+export type PipelineStageId = 
+  | 'ingestion'
+  | 'preprocessing'
+  | 'tiling'
+  | 'feature_extraction'
+  | 'super_resolution'
+  | 'reconstruction'
+  | 'validation'
+  | 'complete';
+
+export interface PipelineStep {
+  id: PipelineStageId;
+  label: string;
+  sublabel: string;
+  description: string;
+  durationMs: number;
+  status: 'pending' | 'active' | 'completed' | 'error';
+}
+
+export interface PipelineLogEntry {
+  id: string;
+  timestamp: string;
+  level: 'INFO' | 'DEBUG' | 'WARN' | 'CUDA' | 'GEO';
+  message: string;
+  stageId: PipelineStageId;
+}
+
+export interface SystemStatusTelemetry {
+  status: 'operational' | 'degraded' | 'maintenance';
+  gpuWorkerCount: number;
+  gpuModel: string;
+  gpuUtilizationPercent: number;
+  vramUsedGb: number;
+  vramTotalGb: number;
+  tileCacheHitPercent: number;
+  avgQueueWaitMs: number;
+  activeJobsCount: number;
+  totalScenesAnalyzed: number;
+  uptimeHours: number;
+}
+
 export interface ProcessingState {
   status: 'idle' | 'uploading' | 'processing' | 'completed' | 'error';
-  stage?: string; // 'Tiling GeoTIFF' | 'DL Super-Resolution Inference' | 'Reconstructing Spatial Grid' | 'Validating Radiometry'
+  stage?: string;
   progress: number; // 0 - 100
   elapsedSeconds: number;
   errorMessage?: string;
