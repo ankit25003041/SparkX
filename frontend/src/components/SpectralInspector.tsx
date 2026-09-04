@@ -120,7 +120,7 @@ export const SpectralInspector: React.FC<SpectralInspectorProps> = ({ spectralPo
                         borderRadius: '8px',
                         fontSize: '11px',
                       }}
-                      formatter={(val: any) => [`${(Number(val) * 100).toFixed(2)}%`, '']}
+                      formatter={(val: unknown) => [`${(Number(val) * 100).toFixed(2)}%`, '']}
                     />
                     <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '4px' }} />
                     <Line
