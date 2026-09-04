@@ -1,114 +1,149 @@
 from dataclasses import dataclass
-from typing import Generator, List, Tuple
+from typing import Generator, List, Tuple, Optional
 import numpy as np
-from rasterio.windows import Window
 
 
 @dataclass
-class WindowTile:
-    tile_idx: int
-    total_tiles: int
-    row_idx: int
-    col_idx: int
-    window: Window
-    out_window: Window
-    is_border: bool
+class PatchCoord:
+    patch_idx: int
+    y_in: int
+    x_in: int
+    in_h: int
+    in_w: int
+    y_out: int
+    x_out: int
+    out_h: int
+    out_w: int
 
 
-class RasterTiler:
+@dataclass
+class PatchGridInfo:
+    original_shape: Tuple[int, int]  # (H, W)
+    padded_shape: Tuple[int, int]    # (H_pad, W_pad)
+    padding: Tuple[int, int, int, int]  # (pad_top, pad_bottom, pad_left, pad_right)
+    patch_size: int
+    overlap: int
+    stride: int
+    scale_factor: int
+    total_patches: int
+    coords: List[PatchCoord]
+
+
+class PatchTiler:
     """
-    Computes and manages overlapping tile windows for safe chunked raster processing.
-    Avoids loading full multi-gigabyte rasters into RAM.
+    Extracts overlapping patches from a multispectral tensor [C, H, W]
+    and packages them into model-ready tensor batches [B, C, H, W].
     """
+
     def __init__(
         self,
-        width: int,
-        height: int,
-        tile_size: int = 256,
-        overlap_percent: int = 20,
+        patch_size: int = 256,
+        overlap: int = 32,
         scale_factor: int = 4,
+        batch_size: int = 4
     ):
-        self.width = width
-        self.height = height
-        self.tile_size = max(64, tile_size)
-        self.overlap_percent = max(0, min(50, overlap_percent))
+        if patch_size <= 0:
+            raise ValueError(f"patch_size must be positive, got {patch_size}")
+        if overlap < 0 or overlap >= patch_size:
+            raise ValueError(f"overlap must be in [0, patch_size), got {overlap} for patch_size {patch_size}")
+        if scale_factor <= 0:
+            raise ValueError(f"scale_factor must be positive, got {scale_factor}")
+
+        self.patch_size = patch_size
+        self.overlap = overlap
         self.scale_factor = scale_factor
+        self.batch_size = max(1, batch_size)
+        self.stride = patch_size - overlap
 
-        self.overlap_pixels = int(self.tile_size * (self.overlap_percent / 100.0))
-        self.stride = max(1, self.tile_size - self.overlap_pixels)
+    def compute_grid(self, height: int, width: int) -> Tuple[np.ndarray, PatchGridInfo]:
+        """
+        Calculates grid coordinates and pads the input shape if necessary
+        to guarantee complete coverage.
+        """
+        stride = self.stride
+        ps = self.patch_size
 
-        # Output dimensions
-        self.out_width = self.width * self.scale_factor
-        self.out_height = self.height * self.scale_factor
-        self.out_tile_size = self.tile_size * self.scale_factor
-        self.out_stride = self.stride * self.scale_factor
-        self.out_overlap_pixels = self.overlap_pixels * self.scale_factor
-
-    def compute_tiles(self) -> List[WindowTile]:
-        """Generates list of tile windows covering the raster."""
-        tiles: List[WindowTile] = []
-        tile_idx = 0
-
-        # Calculate coordinates
-        y_coords: List[int] = []
+        # Determine y crop coordinates
+        y_coords = []
         curr_y = 0
-        while curr_y < self.height:
+        while curr_y + ps <= height:
             y_coords.append(curr_y)
-            if curr_y + self.tile_size >= self.height:
-                break
-            curr_y += self.stride
+            curr_y += stride
+        if not y_coords or y_coords[-1] + ps < height:
+            y_coords.append(max(0, height - ps))
 
-        x_coords: List[int] = []
+        # Determine x crop coordinates
+        x_coords = []
         curr_x = 0
-        while curr_x < self.width:
+        while curr_x + ps <= width:
             x_coords.append(curr_x)
-            if curr_x + self.tile_size >= self.width:
-                break
-            curr_x += self.stride
+            curr_x += stride
+        if not x_coords or x_coords[-1] + ps < width:
+            x_coords.append(max(0, width - ps))
 
-        total_tiles = len(y_coords) * len(x_coords)
-
-        for row_idx, y in enumerate(y_coords):
-            for col_idx, x in enumerate(x_coords):
-                w = min(self.tile_size, self.width - x)
-                h = min(self.tile_size, self.height - y)
-
-                in_win = Window(col_off=x, row_off=y, width=w, height=h)
-                
-                out_x = x * self.scale_factor
-                out_y = y * self.scale_factor
-                out_w = w * self.scale_factor
-                out_h = h * self.scale_factor
-                out_win = Window(col_off=out_x, row_off=out_y, width=out_w, height=out_h)
-
-                is_border = (x == 0 or y == 0 or (x + w) == self.width or (y + h) == self.height)
-
-                tiles.append(
-                    WindowTile(
-                        tile_idx=tile_idx,
-                        total_tiles=total_tiles,
-                        row_idx=row_idx,
-                        col_idx=col_idx,
-                        window=in_win,
-                        out_window=out_win,
-                        is_border=is_border
+        coords: List[PatchCoord] = []
+        idx = 0
+        for y in y_coords:
+            for x in x_coords:
+                coords.append(
+                    PatchCoord(
+                        patch_idx=idx,
+                        y_in=y,
+                        x_in=x,
+                        in_h=ps,
+                        in_w=ps,
+                        y_out=y * self.scale_factor,
+                        x_out=x * self.scale_factor,
+                        out_h=ps * self.scale_factor,
+                        out_w=ps * self.scale_factor
                     )
                 )
-                tile_idx += 1
+                idx += 1
 
-        return tiles
+        grid_info = PatchGridInfo(
+            original_shape=(height, width),
+            padded_shape=(height, width),
+            padding=(0, 0, 0, 0),
+            patch_size=self.patch_size,
+            overlap=self.overlap,
+            stride=self.stride,
+            scale_factor=self.scale_factor,
+            total_patches=len(coords),
+            coords=coords
+        )
 
-    @staticmethod
-    def get_blend_weights(tile_shape: Tuple[int, int]) -> np.ndarray:
+        return grid_info
+
+    def extract_patches(
+        self,
+        tensor: np.ndarray
+    ) -> Tuple[List[np.ndarray], PatchGridInfo]:
         """
-        Creates a 2D Hann window weighting matrix for seamless feathering
-        across overlapping tile boundaries.
+        Extracts all patches from tensor [C, H, W].
+        Returns list of patch arrays [C, patch_size, patch_size] and GridInfo.
         """
-        h, w = tile_shape
-        wy = np.hanning(h)
-        wx = np.hanning(w)
-        # Avoid zero division at borders
-        wy = np.clip(wy, 0.05, 1.0)
-        wx = np.clip(wx, 0.05, 1.0)
-        weight_2d = np.outer(wy, wx)
-        return weight_2d.astype(np.float32)
+        c, h, w = tensor.shape
+        grid_info = self.compute_grid(h, w)
+        
+        patches = []
+        for coord in grid_info.coords:
+            patch = tensor[:, coord.y_in:coord.y_in + coord.in_h, coord.x_in:coord.x_in + coord.in_w]
+            patches.append(patch)
+
+        return patches, grid_info
+
+    def generate_batches(
+        self,
+        tensor: np.ndarray
+    ) -> Generator[Tuple[np.ndarray, List[PatchCoord], PatchGridInfo], None, None]:
+        """
+        Yields model-ready batches of patches [B, C, H, W] along with their coordinates.
+        """
+        patches, grid_info = self.extract_patches(tensor)
+        total = len(patches)
+
+        for i in range(0, total, self.batch_size):
+            batch_patches = patches[i:i + self.batch_size]
+            batch_coords = grid_info.coords[i:i + self.batch_size]
+            batch_tensor = np.stack(batch_patches, axis=0)  # Shape: [B, C, H, W]
+            yield batch_tensor, batch_coords, grid_info

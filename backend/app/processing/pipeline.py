@@ -1,192 +1,242 @@
-import asyncio
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional, Tuple, Dict, Any, List
+from typing import Callable, Dict, List, Optional, Tuple, Union, Any
 import numpy as np
 from PIL import Image
-import rasterio
-from rasterio.enums import Resampling
-from rasterio.transform import Affine
 
 from app.core.logging import logger
-from app.schemas.job import (
-    ProcessJobRequest,
-    ValidationMetrics,
-    SpectralPoint,
-    SuperResolutionModelId,
-)
-from app.processing.tiler import RasterTiler
-from app.utils.geo_utils import generate_preview_png, generate_uncertainty_png
+from app.processing.metadata import RasterMetadata, MetadataExtractor
+from app.processing.raster_reader import RasterReader, RasterData, S2_10M_BANDS
+from app.processing.preprocessing import Sentinel2Preprocessor, PreprocessedData
+from app.processing.normalization import Normalizer, NormalizationMethod, NormalizationParams
+from app.processing.tiler import PatchTiler, PatchGridInfo
+from app.processing.reconstruction import TileReconstructor
+from app.processing.geotiff_writer import GeoTIFFWriter
 
 
-class SuperResolutionPipeline:
+# Explicit label for temporary pipeline test placeholder
+BASELINE_MODEL_LABEL = "BASELINE_BICUBIC_DETERMINISTIC (Pipeline Testing Placeholder — Not Final DL Model)"
+
+
+ModelInferenceFn = Callable[[np.ndarray], np.ndarray]
+
+
+class BaselineDeterministicUpsampler:
     """
-    Super-Resolution processing pipeline for Phase 2.
-    Executes chunked windowed raster processing, baseline spatial upsampling,
-    geospatial transform scaling, and radiometric validation.
+    Temporary deterministic spatial upsampler used strictly for verifying
+    pipeline tiling, batching, reconstruction, and geospatial alignment.
+    
+    IMPORTANT: This is a BASELINE test placeholder, NOT the final deep-learning model.
     """
-    def __init__(self, input_raster_path: Path, output_dir: Path):
-        self.input_path = input_raster_path
-        self.output_dir = output_dir
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self, scale_factor: int = 4):
+        self.scale_factor = scale_factor
+        self.label = BASELINE_MODEL_LABEL
 
-    def execute(
-        self,
-        params: ProcessJobRequest,
-        progress_cb: Optional[Callable[[int, str], None]] = None
-    ) -> Dict[str, Any]:
-        start_time = time.time()
+    def __call__(self, batch: np.ndarray) -> np.ndarray:
+        """
+        Executes deterministic multi-channel bicubic upsampling on batch [B, C, H, W].
+        Returns upsampled batch [B, C, H * scale, W * scale].
+        """
+        b, c, h, w = batch.shape
+        out_h = h * self.scale_factor
+        out_w = w * self.scale_factor
+
+        out_batch = np.zeros((b, c, out_h, out_w), dtype=np.float32)
+
+        for b_idx in range(b):
+            for c_idx in range(c):
+                channel_2d = batch[b_idx, c_idx]
+                pil_img = Image.fromarray(channel_2d)
+                resampled = pil_img.resize((out_w, out_h), Image.Resampling.BICUBIC)
+                out_batch[b_idx, c_idx] = np.array(resampled, dtype=np.float32)
+
+        return out_batch
+
+
+@dataclass
+class PipelineConfig:
+    patch_size: int = 256
+    overlap: int = 32
+    scale_factor: int = 4
+    batch_size: int = 4
+    normalization_method: NormalizationMethod = NormalizationMethod.SENTINEL2_REFLECTANCE
+    target_dtype: str = "uint16"
+    clip_negative: bool = True
+    impute_nodata: bool = True
+    compress: str = "lzw"
+    tiled_output: bool = True
+
+
+@dataclass
+class PipelineResult:
+    output_geotiff_path: Path
+    input_metadata: RasterMetadata
+    output_metadata: RasterMetadata
+    alignment_diagnostics: Dict[str, Any]
+    total_patches: int
+    elapsed_seconds: float
+    model_name: str = BASELINE_MODEL_LABEL
+    is_baseline: bool = True
+
+
+def process_satellite_image(
+    input_path: Union[str, Path],
+    output_path: Union[str, Path],
+    config: Optional[PipelineConfig] = None,
+    model_fn: Optional[ModelInferenceFn] = None,
+    progress_cb: Optional[Callable[[int, str], None]] = None
+) -> PipelineResult:
+    """
+    Complete Geospatial Processing Pipeline:
+    GeoTIFF
+    → validation & metadata extraction
+    → Sentinel-2 10m band selection (B02, B03, B04, B08)
+    → NoData handling & imputation
+    → Configurable Normalization
+    → Window Tiling [B, C, H, W]
+    → Model Inference Interface (or Baseline Upsampler)
+    → 2D Feathering Tile Reconstruction
+    → Denormalization & NoData restoration
+    → GeoTIFF export with preserved CRS
+    → Geospatial alignment verification
+    """
+    start_time = time.time()
+    cfg = config or PipelineConfig()
+    in_file = Path(input_path)
+    out_file = Path(output_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def report_progress(pct: int, msg: str):
+        if progress_cb:
+            progress_cb(pct, msg)
+        logger.info(f"[{pct}%] {msg}")
+
+    report_progress(5, f"Opening and validating GeoTIFF '{in_file.name}'...")
+
+    # Step 1: Read raster data & 10m Sentinel-2 bands [B02, B03, B04, B08]
+    raster_data = RasterReader.read_raster(in_file)
+    input_meta = raster_data.metadata
+    report_progress(15, f"Read {raster_data.data.shape[0]} bands ({input_meta.width}x{input_meta.height}) with CRS {input_meta.crs_string}")
+
+    # Step 2: Compute scaled output metadata
+    target_np_dtype = np.dtype(cfg.target_dtype)
+    output_meta = MetadataExtractor.compute_scaled_metadata(
+        meta=input_meta,
+        scale_factor=cfg.scale_factor,
+        out_channels=4,
+        target_dtype=cfg.target_dtype
+    )
+
+    # Step 3: Preprocessing & NoData handling
+    report_progress(25, "Preprocessing multispectral bands and managing NoData masks...")
+    preprocessor = Sentinel2Preprocessor(
+        clip_negative=cfg.clip_negative,
+        impute_nodata=cfg.impute_nodata
+    )
+    preprocessed: PreprocessedData = preprocessor.process(raster_data)
+
+    # Step 4: Configurable Normalization
+    report_progress(35, f"Normalizing multispectral tensor using method '{cfg.normalization_method.value}'...")
+    norm_tensor, norm_params = Normalizer.normalize(
+        preprocessed.tensor,
+        method=cfg.normalization_method
+    )
+
+    # Step 5: Patch Tiling
+    report_progress(45, f"Tiling raster into {cfg.patch_size}x{cfg.patch_size} patches (overlap={cfg.overlap}px)...")
+    tiler = PatchTiler(
+        patch_size=cfg.patch_size,
+        overlap=cfg.overlap,
+        scale_factor=cfg.scale_factor,
+        batch_size=cfg.batch_size
+    )
+
+    # Step 6: Initialize Reconstructor
+    _, grid_info = tiler.extract_patches(norm_tensor)
+    total_patches = grid_info.total_patches
+    reconstructor = TileReconstructor(grid_info=grid_info, channels=4)
+
+    # Step 7: Execute Model Inference (or Baseline Deterministic Upsampler)
+    inference_fn = model_fn or BaselineDeterministicUpsampler(scale_factor=cfg.scale_factor)
+    model_name = getattr(inference_fn, "label", "Custom Model Interface")
+    is_baseline = (model_name == BASELINE_MODEL_LABEL)
+
+    report_progress(50, f"Executing inference on {total_patches} patches using {model_name}...")
+
+    processed_count = 0
+    for batch_tensor, batch_coords, _ in tiler.generate_batches(norm_tensor):
+        # batch_tensor shape: [B, C=4, H_in, W_in]
+        out_batch = inference_fn(batch_tensor)  # Expected shape: [B, C=4, H_out, W_out]
         
-        def update_progress(pct: int, stage: str):
-            if progress_cb:
-                progress_cb(pct, stage)
-
-        logger.info(f"Starting SR pipeline for {self.input_path.name} with model={params.model}, scale={params.scale_factor}")
-        update_progress(10, "Reading Sentinel-2 GeoTIFF Geotransform & Projection...")
-
-        out_geotiff_path = self.output_dir / f"geosr_sr_x{params.scale_factor}_{self.input_path.stem}.tif"
-        low_res_png_path = self.output_dir / "preview_low_res.png"
-        super_res_png_path = self.output_dir / "preview_super_res.png"
-        uncertainty_png_path = self.output_dir / "preview_uncertainty.png"
-
-        with rasterio.open(self.input_path) as src:
-            width = src.width
-            height = src.height
-            count = src.count
-            dtype = src.dtypes[0]
-            crs = src.crs
-            src_transform = src.transform
-
-            scale = params.scale_factor
-            out_width = width * scale
-            out_height = height * scale
-
-            # Update geotransform for higher resolution (pixel size is divided by scale)
-            # Affine: a (res_x), b, c (top-left x), d, e (res_y), f (top-left y)
-            out_transform = src_transform @ Affine.scale(1.0 / scale, 1.0 / scale)
-
-            update_progress(25, "Extracting multispectral BOA reflectance raster windows...")
-
-            # Initialize tiler for chunked windowed execution
-            tiler = RasterTiler(
-                width=width,
-                height=height,
-                tile_size=params.tile_size,
-                overlap_percent=params.overlap_percent if params.use_tiling else 0,
-                scale_factor=scale
+        # Verify model output shape
+        expected_h = batch_tensor.shape[2] * cfg.scale_factor
+        expected_w = batch_tensor.shape[3] * cfg.scale_factor
+        if out_batch.shape[2] != expected_h or out_batch.shape[3] != expected_w:
+            raise ValueError(
+                f"Model output spatial dimension mismatch: expected ({expected_h}, {expected_w}), got {out_batch.shape[2:]}"
             )
-            tiles = tiler.compute_tiles()
-            total_tiles = len(tiles)
 
-            logger.info(f"Processing raster in {total_tiles} window tiles (tile_size={params.tile_size})...")
+        # Add to seamless reconstructor
+        reconstructor.add_batch(out_batch, batch_coords)
+        processed_count += len(batch_coords)
 
-            # Create output GeoTIFF file
-            profile = src.profile.copy()
-            profile.update({
-                "driver": "GTiff",
-                "width": out_width,
-                "height": out_height,
-                "count": count,
-                "dtype": dtype,
-                "crs": crs,
-                "transform": out_transform,
-                "compress": "lzw",
-                "tiled": True,
-                "blockxsize": min(256, out_width),
-                "blockysize": min(256, out_height),
-            })
+        pct = int(50 + (processed_count / max(1, total_patches)) * 30)
+        report_progress(pct, f"Processed {processed_count}/{total_patches} patches...")
 
-            with rasterio.open(out_geotiff_path, "w", **profile) as dst:
-                for idx, tile in enumerate(tiles):
-                    # Progress between 30% and 75%
-                    progress_pct = int(30 + (idx / max(1, total_tiles)) * 45)
-                    if idx % max(1, total_tiles // 5) == 0:
-                        update_progress(
-                            progress_pct,
-                            f"Executing SRM DL Pipeline ({params.model} x{scale}) — Tile {idx + 1}/{total_tiles}"
-                        )
+    # Step 8: Finalize Reconstruction
+    report_progress(82, "Seamless 2D feathering blending and spatial reconstruction...")
+    reconstructed_norm = reconstructor.finalize()  # Shape: [4, H_scaled, W_scaled]
 
-                    # Read window tile from source (never whole raster)
-                    in_data = src.read(window=tile.window)  # shape: (bands, h, w)
+    # Step 9: Denormalize to target GeoTIFF dynamic range
+    report_progress(88, f"Denormalizing to target data type '{cfg.target_dtype}'...")
+    reconstructed_raw = Normalizer.denormalize(
+        reconstructed_norm,
+        params=norm_params,
+        target_dtype=target_np_dtype
+    )
 
-                    # Baseline Phase 2 spatial upsampler (Bicubic / Bilinear resampling)
-                    # When deep learning weights are integrated in Phase 3, DL inference runs here
-                    out_h = int(tile.window.height * scale)
-                    out_w = int(tile.window.width * scale)
-
-                    # Resample each band for the tile
-                    out_bands = []
-                    for b in range(count):
-                        band_arr = in_data[b]
-                        # Use PIL for high quality cubic interpolation per window
-                        pil_img = Image.fromarray(band_arr.astype(np.float32))
-                        resampled = pil_img.resize((out_w, out_h), Image.Resampling.BICUBIC)
-                        out_bands.append(np.array(resampled, dtype=dtype))
-
-                    out_tile_data = np.stack(out_bands, axis=0)
-
-                    # Write to destination window
-                    dst.write(out_tile_data, window=tile.out_window)
-
-            update_progress(80, "Seamless tile blending & geospatial coordinate reconstruction...")
-
-        # Generate lightweight visualization previews (PNG)
-        update_progress(88, "Rendering multispectral visualizer previews & RGB bands...")
-        generate_preview_png(self.input_path, low_res_png_path, band_combo=params.band_combination.value)
-        generate_preview_png(out_geotiff_path, super_res_png_path, band_combo=params.band_combination.value)
-        generate_uncertainty_png(super_res_png_path, uncertainty_png_path)
-
-        update_progress(95, "Validating radiometric fidelity & spectral angle...")
-
-        elapsed_ms = int((time.time() - start_time) * 1000)
-
-        # Calculate / simulate validation metrics
-        model_multiplier = (
-            1.04 if params.model == SuperResolutionModelId.SWIN_SR_GEO
-            else 1.02 if params.model == SuperResolutionModelId.RCAN_SAT
-            else 1.0 if params.model == SuperResolutionModelId.GEOSR_ESRGAN
-            else 0.90
+    # Step 10: Scale NoData mask to output resolution and restore NoData values if present
+    if np.any(preprocessed.nodata_mask) and input_meta.nodata is not None:
+        pil_mask = Image.fromarray(preprocessed.nodata_mask.astype(np.uint8))
+        out_mask_img = pil_mask.resize(
+            (output_meta.width, output_meta.height),
+            Image.Resampling.NEAREST
         )
+        out_nodata_mask = np.array(out_mask_img, dtype=bool)
+        for ch in range(4):
+            reconstructed_raw[ch][out_nodata_mask] = input_meta.nodata
 
-        base_psnr = 36.20 if scale == 2 else 34.85
-        base_ssim = 0.942 if scale == 2 else 0.926
-        base_sam = 1.95 if scale == 2 else 2.15
+    # Step 11: GeoTIFF Export with preserved CRS
+    report_progress(92, f"Exporting super-resolved GeoTIFF to '{out_file.name}'...")
+    band_names = [f"{name} (Super-Resolved x{cfg.scale_factor})" for name in S2_10M_BANDS]
+    GeoTIFFWriter.write_raster(
+        output_path=out_file,
+        data=reconstructed_raw,
+        metadata=output_meta,
+        band_names=band_names,
+        compress=cfg.compress,
+        tiled=cfg.tiled_output
+    )
 
-        metrics = ValidationMetrics(
-            psnr=round(base_psnr * (1.01 if model_multiplier > 1 else 0.95), 2),
-            ssim=round(min(0.992, base_ssim * (1.005 if model_multiplier > 1 else 0.96)), 3),
-            sam=round(base_sam * (0.94 if model_multiplier > 1 else 1.2), 2),
-            ergas=round(1.68 / model_multiplier, 2),
-            uiqi=round(min(0.985, 0.948 * (1.004 if model_multiplier > 1 else 0.95)), 3),
-            spatial_correlation=round(min(0.995, 0.968 * (1.003 if model_multiplier > 1 else 0.97)), 3),
-            inference_time_ms=elapsed_ms,
-            pixel_count_original=width * height,
-            pixel_count_super_resolved=out_width * out_height,
-            is_demo=True,
-        )
+    # Step 12: Verify Geospatial Alignment
+    report_progress(98, "Verifying geospatial alignment and geotransform precision...")
+    alignment = GeoTIFFWriter.verify_geospatial_alignment(
+        input_raster_path=in_file,
+        output_raster_path=out_file,
+        scale_factor=cfg.scale_factor
+    )
 
-        # Spectral reflectance points
-        spectral_points: List[SpectralPoint] = [
-            SpectralPoint(band="B02", name="Blue", wavelength_nm=490, original_reflectance=0.142, sr_reflectance=0.141, diff_percent=-0.7),
-            SpectralPoint(band="B03", name="Green", wavelength_nm=560, original_reflectance=0.168, sr_reflectance=0.169, diff_percent=0.6),
-            SpectralPoint(band="B04", name="Red", wavelength_nm=665, original_reflectance=0.195, sr_reflectance=0.194, diff_percent=-0.5),
-            SpectralPoint(band="B05", name="Red Edge 1", wavelength_nm=705, original_reflectance=0.218, sr_reflectance=0.220, diff_percent=0.9),
-            SpectralPoint(band="B06", name="Red Edge 2", wavelength_nm=740, original_reflectance=0.252, sr_reflectance=0.254, diff_percent=0.8),
-            SpectralPoint(band="B07", name="Red Edge 3", wavelength_nm=783, original_reflectance=0.281, sr_reflectance=0.280, diff_percent=-0.3),
-            SpectralPoint(band="B08", name="NIR", wavelength_nm=842, original_reflectance=0.312, sr_reflectance=0.315, diff_percent=0.9),
-            SpectralPoint(band="B8A", name="Narrow NIR", wavelength_nm=865, original_reflectance=0.319, sr_reflectance=0.321, diff_percent=0.6),
-            SpectralPoint(band="B11", name="SWIR 1", wavelength_nm=1610, original_reflectance=0.284, sr_reflectance=0.282, diff_percent=-0.7),
-            SpectralPoint(band="B12", name="SWIR 2", wavelength_nm=2190, original_reflectance=0.226, sr_reflectance=0.224, diff_percent=-0.9),
-        ]
+    elapsed = round(time.time() - start_time, 3)
+    report_progress(100, f"Geospatial pipeline completed successfully in {elapsed}s (Aligned: {alignment['is_aligned']})")
 
-        update_progress(100, "Super-Resolution reconstruction finished successfully")
-
-        return {
-            "output_geotiff": out_geotiff_path,
-            "preview_low_res": low_res_png_path,
-            "preview_super_res": super_res_png_path,
-            "preview_uncertainty": uncertainty_png_path,
-            "metrics": metrics,
-            "spectral_points": spectral_points,
-            "elapsed_ms": elapsed_ms,
-        }
+    return PipelineResult(
+        output_geotiff_path=out_file,
+        input_metadata=input_meta,
+        output_metadata=output_meta,
+        alignment_diagnostics=alignment,
+        total_patches=total_patches,
+        elapsed_seconds=elapsed,
+        model_name=model_name,
+        is_baseline=is_baseline
+    )
