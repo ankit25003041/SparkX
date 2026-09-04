@@ -1,5 +1,6 @@
 # GeoSR — AI-Powered Satellite Super Resolution Mapping
 
+<<<<<<< HEAD
 **SIH 2026 Problem Statement 26142:**  
 *"Deep Learning Based Super Resolution Mapping (SRM) from Medium Resolution Satellite Imageries"*
 
@@ -76,3 +77,10 @@ npm install
 npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.
+=======
+Ankit -- Backend  
+Tanishk -- frontend 
+Anvay -- ppt 
+
+Ashika , Ashta , Bhavana -- ML model
+>>>>>>> 6699d98664aecdf47d5a4327141e784cb564c76b
