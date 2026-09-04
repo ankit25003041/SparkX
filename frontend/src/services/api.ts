@@ -5,11 +5,18 @@ import {
   ValidationMetrics, 
   SpectralPoint, 
   ScenePreset, 
-  BandCombination 
+  BandCombination,
+  AnalysisRecord,
+  JobStatus
 } from '../types/geosr';
-import { SCENE_PRESETS } from '../lib/constants';
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { 
+  SCENE_PRESETS, 
+  AVAILABLE_MODELS, 
+  RECENT_ANALYSES, 
+  SYSTEM_TELEMETRY,
+  ANALYTICS_DATA,
+  generatePipelineLogs
+} from '../lib/mockData';
 
 export interface SRJobSubmission {
   jobId?: string;
@@ -239,30 +246,25 @@ class GeoSRApiService {
       { name: 'Spectral Angle & Radiometric Uncertainty Validation...', progress: 100, delay: 350 },
     ];
 
-    let start = Date.now();
-    for (const stage of stages) {
-      await new Promise((r) => setTimeout(r, stage.delay));
-      onProgress({
-        jobId,
-        status: stage.progress === 100 ? 'completed' : 'processing',
-        stage: stage.name,
-        progressPercent: stage.progress,
-        elapsedMs: Date.now() - start,
-      });
-    }
+  /**
+   * Fetch Preset Scene by ID
+   */
+  async getPresetById(id: string): Promise<ScenePreset | undefined> {
+    return SCENE_PRESETS.find((p) => p.id === id);
+  }
 
     const multiplier = params.model === 'geosr_esrgan' ? 1.0 : params.model === 'rcan_sat' ? 1.02 : params.model === 'swin_sr_geo' ? 1.04 : 0.88;
 
-    const metrics: ValidationMetrics = {
-      ...matchedPreset.defaultMetrics,
-      psnr: Number((matchedPreset.defaultMetrics.psnr * (multiplier > 1 ? 1.01 : 0.92)).toFixed(2)),
-      ssim: Number(Math.min(0.99, matchedPreset.defaultMetrics.ssim * (multiplier > 1 ? 1.008 : 0.94)).toFixed(3)),
-      sam: Number((matchedPreset.defaultMetrics.sam * (multiplier > 1 ? 0.95 : 1.25)).toFixed(2)),
-      inferenceTimeMs: params.model === 'swin_sr_geo' ? 620 : params.model === 'geosr_esrgan' ? 410 : params.model === 'rcan_sat' ? 390 : 85,
-    };
+    // If ID matches a scene or new generated ID, synthesize an analysis record
+    const matchedPreset = SCENE_PRESETS.find((p) => p.id === id || id.includes(p.id.replace('s2_', ''))) || SCENE_PRESETS[0];
 
     return {
-      jobId,
+      id,
+      title: matchedPreset.title,
+      location: matchedPreset.location,
+      sceneId: matchedPreset.id,
+      model: 'geosr_esrgan',
+      scaleFactor: 4,
       status: 'completed',
       stage: 'Super-Resolution Reconstruction Finished Successfully (Demo Preset)',
       progressPercent: 100,
@@ -275,10 +277,17 @@ class GeoSRApiService {
   }
 
   /**
-   * Fetch Preset Scenes
+   * Fetch System Telemetry
    */
-  async getPresets(): Promise<ScenePreset[]> {
-    return SCENE_PRESETS;
+  async getSystemTelemetry() {
+    return SYSTEM_TELEMETRY;
+  }
+
+  /**
+   * Fetch Analytics Data
+   */
+  async getAnalyticsData() {
+    return ANALYTICS_DATA;
   }
 }
 
