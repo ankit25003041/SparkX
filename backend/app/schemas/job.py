@@ -73,16 +73,18 @@ class SpectralPoint(BaseModel):
 
 
 class ValidationMetrics(BaseModel):
-    psnr: float = Field(..., description="Peak Signal-to-Noise Ratio (dB)")
-    ssim: float = Field(..., description="Structural Similarity Index (0-1)")
-    sam: float = Field(..., description="Spectral Angle Mapper (degrees, lower is better)")
-    ergas: float = Field(..., description="Relative Dimensionless Global Error")
-    uiqi: float = Field(..., description="Universal Image Quality Index")
-    spatial_correlation: float = Field(..., description="Spatial correlation coefficient")
+    psnr: Optional[float] = Field(None, description="Peak Signal-to-Noise Ratio (dB). Null when no HR reference is available.")
+    ssim: Optional[float] = Field(None, description="Structural Similarity Index (0-1). Null when no HR reference is available.")
+    sam: Optional[float] = Field(None, description="Spectral Angle Mapper (degrees, lower is better). Null when no HR reference is available.")
+    ergas: Optional[float] = Field(None, description="Relative Dimensionless Global Error. Null when no HR reference is available.")
+    uiqi: Optional[float] = Field(None, description="Universal Image Quality Index.")
+    spatial_correlation: Optional[float] = Field(None, description="Spatial correlation coefficient.")
     inference_time_ms: int = Field(..., description="Inference execution duration in ms")
     pixel_count_original: int = Field(..., description="Input pixel count")
     pixel_count_super_resolved: int = Field(..., description="Super-resolved pixel count")
     is_demo: bool = Field(default=True, description="Indicates if metrics are simulated / baseline (Phase 2)")
+    reference_available: bool = Field(default=False, description="True if an HR reference was available for quantitative validation")
+    confidence_score: Optional[float] = Field(None, description="Mean self-consistency confidence (0-100) when no reference")
 
 
 class JobStatusResponse(BaseModel):
@@ -106,6 +108,7 @@ class JobResultsResponse(BaseModel):
     low_res_preview_url: Optional[str] = None
     super_res_preview_url: Optional[str] = None
     uncertainty_map_url: Optional[str] = None
+    validation_report_url: Optional[str] = None
     download_url: Optional[str] = None
     is_demo: bool = Field(default=True, description="True since DL model weights not yet integrated in Phase 2")
     message: str = Field(default="Super-resolution processing finished.")

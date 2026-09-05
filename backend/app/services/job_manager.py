@@ -49,6 +49,7 @@ class JobRecord:
         self.preview_low_res_path: Optional[Path] = None
         self.preview_super_res_path: Optional[Path] = None
         self.preview_uncertainty_path: Optional[Path] = None
+        self.validation_report_path: Optional[Path] = None
         self.error_message: Optional[str] = None
         self.start_time: Optional[float] = None
         self.elapsed_seconds: float = 0.0
@@ -159,6 +160,10 @@ class JobManager:
         super_res_url = f"{prefix}/preview/super_res" if record.preview_super_res_path and record.preview_super_res_path.exists() else None
         uncertainty_url = f"{prefix}/preview/uncertainty" if record.preview_uncertainty_path and record.preview_uncertainty_path.exists() else None
         download_url = f"{prefix}/download" if record.output_geotiff_path and record.output_geotiff_path.exists() else None
+        validation_report_url = (
+            f"{prefix}/validation-report" if record.validation_report_path and record.validation_report_path.exists()
+            else None
+        )
 
         return JobResultsResponse(
             job_id=record.job_id,
@@ -170,8 +175,9 @@ class JobManager:
             low_res_preview_url=low_res_url,
             super_res_preview_url=super_res_url,
             uncertainty_map_url=uncertainty_url,
+            validation_report_url=validation_report_url,
             download_url=download_url,
-            is_demo=True,
+            is_demo=True if record.metrics is None else (record.metrics.is_demo if record.metrics else True),
             message="Super-resolution processing finished." if record.status == JobStatus.COMPLETED else record.stage
         )
 
@@ -256,6 +262,7 @@ class JobManager:
 
             from app.processing.pipeline import process_satellite_image, PipelineConfig
             from app.utils.geo_utils import generate_preview_png, generate_uncertainty_png
+            from app.processing.geosr_backend import build_model_fn, run_validation
 
             config = PipelineConfig(
                 patch_size=params.tile_size,
@@ -264,40 +271,97 @@ class JobManager:
                 target_dtype="uint16"
             )
 
+            # Phase 7: use the real trained GeoSR model when a checkpoint is
+            # configured and torch is available; otherwise keep the bicubic
+            # baseline (backward compatible — keeps demo metrics / tests green).
+            model_fn = build_model_fn(str(settings.geosr_checkpoint) if settings.geosr_checkpoint else None,
+                                      params.scale_factor)
+            real_sr = model_fn is not None
+
             pipeline_result = process_satellite_image(
                 input_path=record.input_file_path,
                 output_path=output_geotiff,
                 config=config,
+                model_fn=model_fn,
                 progress_cb=progress_callback
             )
 
             # Generate lightweight visualization previews
             generate_preview_png(record.input_file_path, low_res_png, band_combo=params.band_combination.value)
             generate_preview_png(output_geotiff, super_res_png, band_combo=params.band_combination.value)
-            generate_uncertainty_png(super_res_png, uncertainty_png)
 
             elapsed_ms = int(record.elapsed_seconds * 1000)
 
-            # Calculate baseline validation metrics
-            metrics = ValidationMetrics(
-                psnr=35.80 if params.scale_factor == 2 else 34.42,
-                ssim=0.941 if params.scale_factor == 2 else 0.925,
-                sam=1.92 if params.scale_factor == 2 else 2.18,
-                ergas=1.65,
-                uiqi=0.952,
-                spatial_correlation=0.970,
-                inference_time_ms=elapsed_ms,
-                pixel_count_original=pipeline_result.input_metadata.width * pipeline_result.input_metadata.height,
-                pixel_count_super_resolved=pipeline_result.output_metadata.width * pipeline_result.output_metadata.height,
-                is_demo=True
-            )
+            if real_sr:
+                # Phase 7 artifacts: real confidence map + validation report.
+                conf_png, conf_tif, report = run_validation(
+                    record.input_file_path, output_geotiff, params.scale_factor, output_dir
+                )
+                report = report if isinstance(report, dict) else {}
+                if conf_png:
+                    record.preview_uncertainty_path = conf_png
+                else:
+                    record.preview_uncertainty_path = uncertainty_png
+                    generate_uncertainty_png(super_res_png, uncertainty_png)
+                # report JSON written by run_validation; persist its path.
+                report_json = output_dir / f"validation_report_{output_geotiff.stem}.json"
+                if report_json.exists():
+                    record.validation_report_path = report_json
+                unc_summary: dict = report.get("uncertainty_summary", {}) or {}
+                is_ref = bool(report.get("reference_available", False))
 
-            spectral_points: List[SpectralPoint] = [
-                SpectralPoint(band="B02", name="Blue (490nm)", wavelength_nm=490, original_reflectance=0.142, sr_reflectance=0.141, diff_percent=-0.7),
-                SpectralPoint(band="B03", name="Green (560nm)", wavelength_nm=560, original_reflectance=0.168, sr_reflectance=0.169, diff_percent=0.6),
-                SpectralPoint(band="B04", name="Red (665nm)", wavelength_nm=665, original_reflectance=0.195, sr_reflectance=0.194, diff_percent=-0.5),
-                SpectralPoint(band="B08", name="NIR (842nm)", wavelength_nm=842, original_reflectance=0.312, sr_reflectance=0.315, diff_percent=0.9),
-            ]
+                # Build real per-band SpectralPoints from the report (no fabrication).
+                band_cmp = report.get("spectral_validation", {}).get("band_comparison", []) or []
+                band_wl = {"B02": 490, "B03": 560, "B04": 665, "B08": 842}
+                band_name = {"B02": "Blue", "B03": "Green", "B04": "Red", "B08": "NIR"}
+                spectral_points = [
+                    SpectralPoint(
+                        band=bc["band"],
+                        name=f"{band_name.get(bc['band'], bc['band'])} ({bc['band']})",
+                        wavelength_nm=band_wl.get(bc["band"], 0),
+                        original_reflectance=float(bc["lr_mean_reflectance"]),
+                        sr_reflectance=float(bc["sr_mean_reflectance"]),
+                        diff_percent=float(bc["diff_percent"]),
+                    )
+                    for bc in band_cmp
+                ]
+
+                metrics = ValidationMetrics(
+                    psnr=report.get("psnr"),
+                    ssim=report.get("ssim"),
+                    sam=report.get("sam"),
+                    ergas=report.get("ergas"),
+                    uiqi=None,
+                    spatial_correlation=None,
+                    inference_time_ms=elapsed_ms,
+                    pixel_count_original=pipeline_result.input_metadata.width * pipeline_result.input_metadata.height,
+                    pixel_count_super_resolved=pipeline_result.output_metadata.width * pipeline_result.output_metadata.height,
+                    is_demo=False,
+                    reference_available=is_ref,
+                    confidence_score=unc_summary.get("confidence_score"),
+                )
+            else:
+                # baseline fallback: keep the demo uncertainty + demo metrics
+                generate_uncertainty_png(super_res_png, uncertainty_png)
+                record.preview_uncertainty_path = uncertainty_png
+                spectral_points: List[SpectralPoint] = [
+                    SpectralPoint(band="B02", name="Blue (490nm)", wavelength_nm=490, original_reflectance=0.142, sr_reflectance=0.141, diff_percent=-0.7),
+                    SpectralPoint(band="B03", name="Green (560nm)", wavelength_nm=560, original_reflectance=0.168, sr_reflectance=0.169, diff_percent=0.6),
+                    SpectralPoint(band="B04", name="Red (665nm)", wavelength_nm=665, original_reflectance=0.195, sr_reflectance=0.194, diff_percent=-0.5),
+                    SpectralPoint(band="B08", name="NIR (842nm)", wavelength_nm=842, original_reflectance=0.312, sr_reflectance=0.315, diff_percent=0.9),
+                ]
+                metrics = ValidationMetrics(
+                    psnr=35.80 if params.scale_factor == 2 else 34.42,
+                    ssim=0.941 if params.scale_factor == 2 else 0.925,
+                    sam=1.92 if params.scale_factor == 2 else 2.18,
+                    ergas=1.65,
+                    uiqi=0.952,
+                    spatial_correlation=0.970,
+                    inference_time_ms=elapsed_ms,
+                    pixel_count_original=pipeline_result.input_metadata.width * pipeline_result.input_metadata.height,
+                    pixel_count_super_resolved=pipeline_result.output_metadata.width * pipeline_result.output_metadata.height,
+                    is_demo=True
+                )
 
             with self._lock:
                 if record.status != JobStatus.CANCELLED:
@@ -311,7 +375,7 @@ class JobManager:
                     record.output_geotiff_path = output_geotiff
                     record.preview_low_res_path = low_res_png
                     record.preview_super_res_path = super_res_png
-                    record.preview_uncertainty_path = uncertainty_png
+                    # preview_uncertainty_path is set in the real/baseline branch above.
                     record.metrics = metrics
                     record.spectral_points = spectral_points
 

@@ -1,7 +1,8 @@
 from pathlib import Path
 from typing import Optional
+import json
 from fastapi import APIRouter, HTTPException, Depends, status, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.core.config import Settings
 from app.core.logging import logger
@@ -262,3 +263,33 @@ async def get_preview_image(
         path=str(preview_path),
         media_type="image/png"
     )
+
+
+@router.get(
+    "/{job_id}/validation-report",
+    summary="Get Phase 7 Unified Validation Report"
+)
+async def get_validation_report(
+    job_id: str,
+    job_mgr: JobManager = Depends(get_job_mgr)
+):
+    """Returns the Phase 7 validation report JSON (PSNR/SSIM/SAM/ERGAS +
+    spectral + spatial + uncertainty). When no HR reference was available,
+    reference metrics are null and the report states:
+    'Reference-based quantitative validation unavailable for this scene.'
+    """
+    job = job_mgr.get_job(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job '{job_id}' not found"
+        )
+    path = job.validation_report_path
+    if not path or not path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Validation report has not been generated yet (real model not used)."
+        )
+    with open(path, "r", encoding="utf-8") as f:
+        report = json.load(f)
+    return JSONResponse(content=report)

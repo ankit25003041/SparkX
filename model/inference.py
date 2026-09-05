@@ -22,12 +22,24 @@ absolute-resolution behaviour outside the trained scale is an *extrapolation*
 Usage:
     python model/inference.py \
         --input data/sample_sentinel2_10m.tif \
-        --checkpoint model/checkpoints/baseline_run/best.pth \
+        --checkpoint model/checkpoints/advanced_geosr_best.tif \
         --output model/outputs/sr_out.tif \
-        --scale 4
-        # optional: compare to a known HR reference
-        --reference data/sample_sentinel2_10m.tif \
-        --metrics model/outputs/metrics.json
+        --scale 4 --reference data/sample_sentinel2_10m.tif \
+        --report model/outputs/validation_report.json
+
+Outputs (Phase 7):
+    * <output>.tif            super-resolved GeoTIFF (scaled GSD, CRS/band-descriptions preserved)
+    * confidence_<output>.tif  per-pixel confidence map GeoTIFF (float32 0..1, output resolution)
+    * confidence_<output>.png  uint8 preview of the confidence map
+    * validation_report.json   unified report:
+        { psnr, ssim, sam, ergas, scale_factor, reference_available,
+          reference_note, spectral_validation, spatial_validation, uncertainty_summary }
+
+When no --reference is provided, reference-based quantitative metrics are left null
+and the report states:
+    "Reference-based quantitative validation unavailable for this scene."
+Confidence is then derived from self-consistency (LR↔SR round-trip) or an
+input-perturbation ensemble (see model/evaluation/uncertainty.py).
 """
 from __future__ import annotations
 
@@ -48,6 +60,12 @@ sys.path.insert(0, str(_REPO_ROOT))
 from model.architectures import build_baseline, build_advanced
 from model.datasets import SatelliteSRDataset, DatasetConfig, DegradationConfig
 from model.evaluation.metrics import compute_all_metrics
+from model.evaluation.uncertainty import (
+    self_consistency,
+    input_noise_ensemble,
+    confidence_to_uint8,
+)
+from model.evaluation.validation import build_validation_report, save_report as save_validation_report
 
 BAND_NAMES = ["B02 (Blue)", "B03 (Green)", "B04 (Red)", "B08 (NIR)"]
 REFLECTANCE_SCALE = 10000.0
@@ -193,10 +211,9 @@ def run_inference(args: argparse.Namespace) -> dict:
 
     out_dn = _denormalize(out_refl)
 
-    # write GeoTIFF with scaled transform (matches backend GeoTIFFWriter contract)
+    # --- write SR GeoTIFF with scaled transform (matches backend GeoTIFFWriter contract) ---
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    # Scale resolution relative to the same top-left origin (works for rotated transforms too)
     new_transform = Affine(transform.a / scale, transform.b / scale, transform.c,
                            transform.d / scale, transform.e / scale, transform.f)
     out_crs = crs if crs else CRS.from_epsg(32643)
@@ -235,19 +252,15 @@ def run_inference(args: argparse.Namespace) -> dict:
         "checkpoint": str(args.checkpoint) if args.checkpoint else None,
     }
 
-    # optional HR reference metrics
+    # --- optional HR reference (reference-based quantitative validation) ---
+    hr_refl = None
     if args.reference:
         ref_path = Path(args.reference)
         if ref_path.exists():
-            ref_dn, ref_crs, ref_transform, ref_gsd, _, _ = _read_geotiff(ref_path)
-            # degrade reference to LR space for a fair bicubic baseline too? No — reference is HR ground truth.
-            # If reference gsd == input_gsd (e.g. comparing to same scene), just measure SR vs HR.
-            ref_refl = _normalize(ref_dn)
-            # align reference to output size for metric computation (resize via nearest if needed)
-            ref_np = ref_refl
+            ref_dn, _, _, _, _, _ = _read_geotiff(ref_path)
+            ref_np = _normalize(ref_dn)
             out_h, out_w = out_refl.shape[1], out_refl.shape[2]
             if (ref_np.shape[1], ref_np.shape[2]) != (out_h, out_w):
-                # nearest crop/resize to output grid for metric reporting
                 from scipy.ndimage import zoom
                 zh = out_h / ref_np.shape[1]; zw = out_w / ref_np.shape[2]
                 ref_np = np.stack([
@@ -255,17 +268,79 @@ def run_inference(args: argparse.Namespace) -> dict:
                     for ch in range(ref_np.shape[0])
                 ], axis=0)
                 ref_np = np.clip(ref_np, 0.0, 1.5)
-            m = compute_all_metrics(out_refl, ref_np)
-            result["reference_metrics"] = m
-            print(f"[infer] vs reference: PSNR={m['psnr']:.2f} dB  SSIM={m['ssim']:.4f}  SAM={m['sam_degrees']:.2f} deg")
-            if args.metrics:
-                metrics_path = Path(args.metrics)
-                metrics_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(metrics_path, "w") as f:
-                    json.dump({"input": str(tiff_path), "reference": str(ref_path),
-                               "scale_factor": scale, "output_gsd_meters": args.gsd / scale,
-                               "metrics": m}, f, indent=2)
-                print(f"[infer] metrics -> {metrics_path}")
+            hr_refl = ref_np  # numpy [C,H,W] reflectance, aligned to output
+            ref_metrics = compute_all_metrics(out_refl, ref_np)
+            result["reference_metrics"] = ref_metrics
+            print(f"[infer] vs reference: PSNR={ref_metrics['psnr']:.2f} dB  "
+                  f"SSIM={ref_metrics['ssim']:.4f}  SAM={ref_metrics['sam_degrees']:.2f} deg")
+
+    # --- uncertainty / confidence map (self-consistency, always available) ---
+    lr_tensor = torch.from_numpy(np.ascontiguousarray(refl))[None, :, :, :]  # [1,C,H,W]
+    if scale != 4 and scale != 2:
+        raise ValueError("scale must be 2 or 4 (powers of two)")
+    lr_refl_arr = refl  # [C, H, W] normalized input LR reflectance
+    sr_refl_arr = out_refl  # [C, H*s, W*s]
+
+    if args.uncertainty_method == "ensemble" and args.ensemble_n > 1:
+        unc = input_noise_ensemble(
+            model, lr_tensor, scale_factor=scale, n=args.ensemble_n,
+            noise_std=args.noise_std, device=device,
+        )
+    else:
+        unc = self_consistency(sr_refl_arr, lr_refl_arr, scale_factor=scale)
+
+    conf_map = unc["confidence_map"]      # [H, W] float32 in [0,1]
+    uncertainty_summary = unc["summary"]
+
+    # write confidence map GeoTIFF (float32) + uint8 preview PNG
+    conf_out = out_path.parent / f"confidence_{out_path.stem}.tif"
+    cprofile = {
+        "driver": "GTiff", "height": conf_map.shape[0], "width": conf_map.shape[1],
+        "count": 1, "dtype": "float32", "crs": out_crs,
+        "transform": new_transform, "compress": "lzw", "nodata": None,
+    }
+    with rasterio.open(conf_out, "w", **cprofile) as dst:
+        dst.write(conf_map.astype("float32"), 1)
+        dst.set_band_description(1, "SR confidence (self-consistency, 0-1)")
+    try:
+        from PIL import Image
+        png_out = out_path.parent / f"confidence_{out_path.stem}.png"
+        conf_uint8 = confidence_to_uint8(conf_map)
+        Image.fromarray(conf_uint8, mode="L").save(png_out)
+        result["confidence_png"] = str(png_out)
+    except Exception as e:  # PIL optional
+        print(f"[infer] confidence PNG skipped: {e}")
+    result["confidence_map"] = str(conf_out)
+    result["uncertainty_summary"] = uncertainty_summary
+    print(f"[infer] confidence map -> {conf_out} "
+          f"(score={uncertainty_summary['confidence_score']:.1f}%, "
+          f"high-uncertainty {uncertainty_summary['high_uncertainty_pixel_percent']:.1f}% px)")
+
+    # --- unified validation report (Phase 7 schema) ---
+    report = build_validation_report(
+        pred_refl=out_refl,
+        lr_refl=lr_refl_arr,
+        hr_refl=hr_refl,
+        scale_factor=float(scale),
+        data_range=1.5,
+        band_names=[b.split()[0] for b in BAND_NAMES[:out_refl.shape[0]]],
+        uncertainty_summary=uncertainty_summary,
+    )
+    report_path = Path(args.report) if args.report else (out_path.parent / f"validation_report_{out_path.stem}.json")
+    save_validation_report(report, report_path)
+    result["validation_report"] = str(report_path)
+    if args.metrics:
+        metrics_path = Path(args.metrics)
+        metrics_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(metrics_path, "w") as f:
+            json.dump({"input": str(tiff_path), "scale_factor": scale,
+                       "output_gsd_meters": args.gsd / scale,
+                       "metrics": report}, f, indent=2)
+        result["metrics_report"] = str(metrics_path)
+        print(f"[infer] validation report -> {metrics_path}")
+    print(f"[infer] validation report -> {report_path}")
+    if not report["reference_available"]:
+        print(f"[infer] {report['reference_note']}")
 
     return result
 
@@ -277,8 +352,14 @@ def main() -> None:
     parser.add_argument("--checkpoint", default=None, help="Path to best.pth checkpoint")
     parser.add_argument("--scale", type=int, default=4, choices=[2, 4], help="Super-resolution factor")
     parser.add_argument("--tile-size", type=int, default=DEFAULT_TILE, help="LR tile size for large-image inference")
-    parser.add_argument("--reference", default=None, help="Optional HR GeoTIFF to compute metrics")
-    parser.add_argument("--metrics", default=None, help="Optional path to write metrics JSON")
+    parser.add_argument("--reference", default=None, help="Optional HR GeoTIFF for reference-based validation")
+    parser.add_argument("--metrics", default=None, help="Optional path to write validation report JSON")
+    parser.add_argument("--report", default=None, help="Optional path to write the unified validation report JSON")
+    parser.add_argument("--uncertainty-method", default="self_consistency",
+                        choices=["self_consistency", "ensemble"],
+                        help="Uncertainty estimation strategy")
+    parser.add_argument("--ensemble-n", type=int, default=5, help="Ensemble passes for ensemble uncertainty")
+    parser.add_argument("--noise-std", type=float, default=0.01, help="Input noise std (reflectance units) for ensemble")
     args = parser.parse_args()
 
     # resolve input gsd from the file

@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from typing import List, Union
+from typing import List, Union, Optional
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -32,6 +32,18 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 500
     DEFAULT_TILE_SIZE: int = 256
     LOG_LEVEL: str = "INFO"
+
+    # Phase 7: optional path to a trained GeoSR torch checkpoint. When set (and
+    # torch is importable) the real SR model replaces the bicubic baseline and a
+    # real validation report + confidence map are produced. When unset, the
+    # system falls back to the deterministic baseline (demo metrics).
+    GEOSR_CHECKPOINT: Optional[str] = None
+
+    @property
+    def geosr_checkpoint(self) -> Optional[Path]:
+        if not self.GEOSR_CHECKPOINT:
+            return None
+        return Path(self.GEOSR_CHECKPOINT)
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -74,6 +86,12 @@ class Settings(BaseSettings):
         path = self.storage_path / "temporary"
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    @property
+    def repo_root(self) -> Path:
+        """Repository root (parent of the backend dir), so the `model/` package
+        used by the Phase-7 GeoSR inference backend is importable."""
+        return self.base_dir.parent
 
 
 settings = Settings()

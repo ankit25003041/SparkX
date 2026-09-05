@@ -79,15 +79,57 @@ export interface SpectralPoint {
 }
 
 export interface ValidationMetrics {
-  psnr: number; // dB (e.g. 34.82)
-  ssim: number; // 0-1 (e.g. 0.924)
-  sam: number; // degrees (Spectral Angle Mapper, lower is better, e.g. 2.15°)
-  ergas: number; // Relative Dimensionless Global Error, e.g. 1.84
-  uiqi: number; // Universal Image Quality Index, e.g. 0.941
-  spatialCorrelation: number; // e.g. 0.968
-  inferenceTimeMs: number; // e.g. 340
-  pixelCountOriginal: number;
-  pixelCountSuperResolved: number;
+  psnr?: number | null; // dB (e.g. 34.82) — null when no HR reference
+  ssim?: number | null; // 0-1 (e.g. 0.924)
+  sam?: number | null; // degrees (Spectral Angle Mapper, lower is better, e.g. 2.15°)
+  ergas?: number | null; // Relative Dimensionless Global Error, e.g. 1.84
+  uiqi?: number | null; // Universal Image Quality Index, e.g. 0.941
+  spatialCorrelation?: number | null; // e.g. 0.968
+  inferenceTimeMs?: number; // e.g. 340
+  pixelCountOriginal?: number;
+  pixelCountSuperResolved?: number;
+  isDemo?: boolean;
+  referenceAvailable?: boolean; // true if an HR reference existed for validation
+  confidenceScore?: number | null; // mean self-consistency confidence (0-100)
+}
+
+export interface UncertaintySummary {
+  confidence_score: number; // 0-100
+  confidence_mean: number;
+  confidence_std: number;
+  max_uncertainty: number;
+  mean_uncertainty: number;
+  high_uncertainty_pixel_percent: number;
+}
+
+export interface SpectralBandValidation {
+  band: string;
+  mean: number;
+  std: number;
+  min: number;
+  max: number;
+}
+
+export interface ValidationReport {
+  scale_factor: number;
+  psnr: number | null;
+  ssim: number | null;
+  sam: number | null;
+  ergas: number | null;
+  reference_available: boolean;
+  reference_note: string;
+  spectral_validation: {
+    band_names: string[];
+    sr_stats: SpectralBandValidation[];
+    per_band_error?: Array<{ band: string; rmse: number; mean_abs_error: number; correlation: number }>;
+  };
+  spatial_validation: {
+    mean_gradient_magnitude: number;
+    sharpness_ratio_vs_reference: number | null;
+  };
+  uncertainty_summary: UncertaintySummary;
+  input_gsd_meters?: number;
+  output_gsd_meters?: number;
 }
 
 export interface UncertaintyMetrics {
@@ -115,6 +157,28 @@ export interface ScenePreset {
 }
 
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
+
+export interface JobResultLinks {
+  lowResPreviewUrl?: string;
+  superResPreviewUrl?: string;
+  uncertaintyMapUrl?: string;
+  validationReportUrl?: string;
+  downloadUrl?: string;
+}
+
+export interface JobResultsResponse {
+  job_id: string;
+  status: JobStatus;
+  metrics?: ValidationMetrics;
+  spectral_points?: SpectralPoint[];
+  low_res_preview_url?: string;
+  super_res_preview_url?: string;
+  uncertainty_map_url?: string;
+  validation_report_url?: string;
+  download_url?: string;
+  is_demo: boolean;
+  message: string;
+}
 
 export interface AnalysisRecord {
   id: string;

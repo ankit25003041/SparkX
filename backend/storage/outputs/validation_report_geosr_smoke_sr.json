@@ -1,0 +1,61 @@
+{
+  "scale_factor": 4.0,
+  "reference_available": false,
+  "psnr": null,
+  "ssim": null,
+  "sam": null,
+  "ergas": null,
+  "reference_note": "Reference-based quantitative validation unavailable for this scene.",
+  "spectral_validation": {
+    "band_names": [
+      "B02",
+      "B03",
+      "B04",
+      "B08"
+    ],
+    "sr_stats": [
+      {
+        "band": "B02",
+        "mean": 0.12057775259017944,
+        "std": 0.034865815192461014,
+        "min": 0.02319999970495701,
+        "max": 0.25459998846054077
+      },
+      {
+        "band": "B03",
+        "mean": 0.2011105716228485,
+        "std": 0.04661161080002785,
+        "min": 0.08760000020265579,
+        "max": 0.37040001153945923
+      },
+      {
+        "band": "B04",
+        "mean": 0.13148345053195953,
+        "std": 0.04118625447154045,
+        "min": 0.022299999371170998,
+        "max": 0.2680000066757202
+      },
+      {
+        "band": "B08",
+        "mean": 0.5415903329849243,
+        "std": 0.09822649508714676,
+        "min": 0.3111000061035156,
+        "max": 0.8622999787330627
+      }
+    ]
+  },
+  "spatial_validation": {
+    "mean_gradient_magnitude": 0.12814635038375854,
+    "sharpness_ratio_vs_reference": null
+  },
+  "uncertainty_summary": {
+    "confidence_score": 6.634307861328125,
+    "confidence_mean": 0.06634307652711868,
+    "confidence_std": 0.0003284509584773332,
+    "max_uncertainty": 0.9349696636199951,
+    "mean_uncertainty": 0.9336569309234619,
+    "high_uncertainty_pixel_percent": 100.0
+  },
+  "input_gsd_meters": 10.0,
+  "output_gsd_meters": 2.5
+}
