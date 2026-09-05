@@ -15,6 +15,7 @@ import {
 } from '../types/geosr';
 import { geoSRApi } from '../services/api';
 import { SCENE_PRESETS, SYSTEM_TELEMETRY, RECENT_ANALYSES } from '../lib/mockData';
+import { SIH_DEMO_SCENES } from '../data/sihDemoScenes';
 import { StatusBadge } from '../components/StatusBadge';
 import { MetricCard } from '../components/MetricCard';
 import { AnalysisCard } from '../components/AnalysisCard';
@@ -233,6 +234,15 @@ export default function GeoSRDashboardPage() {
               <BarChart3 className="w-4 h-4" />
               Model Benchmarks
             </Link>
+
+            <Link
+              href="/demo"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-semibold text-sm shadow-lg shadow-amber-950/50 hover:shadow-amber-900/60 transition-all group"
+            >
+              <Zap className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+              Launch SIH Demo
+              <ArrowRight className="w-4 h-4 ml-1" />
+            </Link>
           </div>
         </div>
       </section>
@@ -346,28 +356,28 @@ export default function GeoSRDashboardPage() {
               </h3>
             </div>
             <span className="text-xs text-slate-400 font-mono hidden sm:inline">
-              Pre-loaded Sentinel-2 L2A Scenes
+              Precomputed Real-Metric Demonstration Scenes
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
-            {SCENE_PRESETS.map((preset) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-2.5">
+            {SIH_DEMO_SCENES.map((scene) => (
               <Link
-                key={preset.id}
-                href={`/results/${preset.id}`}
+                key={scene.id}
+                href={`/demo/${scene.id}`}
                 className="p-3 rounded-xl bg-slate-950/80 hover:bg-cyan-950/50 border border-slate-800 hover:border-cyan-500/50 transition-all text-left group flex flex-col justify-between space-y-2"
               >
                 <div>
                   <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-                    <span>{preset.category}</span>
-                    <span className="text-cyan-400 font-bold">4x SR</span>
+                    <span>{scene.category}</span>
+                    <span className="text-cyan-400 font-bold">{scene.scale_factor}x SR</span>
                   </div>
                   <div className="text-xs font-semibold text-white group-hover:text-cyan-300 transition-colors line-clamp-1 mt-1">
-                    {preset.title.split('(')[0]}
+                    {scene.title}
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800/60">
-                  <span>PSNR: {preset.defaultMetrics.psnr}dB</span>
+                  <span>PSNR: {scene.metrics.psnr != null ? `${scene.metrics.psnr.toFixed(2)}` : '—'}dB</span>
                   <ArrowRight className="w-3 h-3 text-cyan-400 group-hover:translate-x-1 transition-transform" />
                 </div>
               </Link>

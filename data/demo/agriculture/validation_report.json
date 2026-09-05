@@ -1,0 +1,111 @@
+{
+  "scale_factor": 4.0,
+  "reference_available": true,
+  "psnr": 25.197303771972656,
+  "ssim": 0.5119014978408813,
+  "sam": 7.605331897735596,
+  "ergas": 5.255342960357666,
+  "reference_note": "Quantitative validation computed against provided HR reference.",
+  "spectral_validation": {
+    "band_names": [
+      "B02",
+      "B03",
+      "B04",
+      "B08"
+    ],
+    "sr_stats": [
+      {
+        "band": "B02",
+        "mean": 0.2816733121871948,
+        "std": 0.08939505368471146,
+        "min": 0.0016686692833900452,
+        "max": 0.6145195364952087
+      },
+      {
+        "band": "B03",
+        "mean": 0.3582751750946045,
+        "std": 0.09594111889600754,
+        "min": 0.05036526173353195,
+        "max": 0.7286229133605957
+      },
+      {
+        "band": "B04",
+        "mean": 0.27136415243148804,
+        "std": 0.08475101739168167,
+        "min": 0.0,
+        "max": 0.5739845633506775
+      },
+      {
+        "band": "B08",
+        "mean": 0.8542826771736145,
+        "std": 0.10856670886278152,
+        "min": 0.5035524964332581,
+        "max": 1.2940033674240112
+      }
+    ],
+    "band_comparison": [
+      {
+        "band": "B02",
+        "lr_mean_reflectance": 0.3551696240901947,
+        "sr_mean_reflectance": 0.2816733121871948,
+        "diff_percent": -20.693298896624
+      },
+      {
+        "band": "B03",
+        "lr_mean_reflectance": 0.38278430700302124,
+        "sr_mean_reflectance": 0.3582751750946045,
+        "diff_percent": -6.4028570294088105
+      },
+      {
+        "band": "B04",
+        "lr_mean_reflectance": 0.3455941677093506,
+        "sr_mean_reflectance": 0.27136415243148804,
+        "diff_percent": -21.47895485906782
+      },
+      {
+        "band": "B08",
+        "lr_mean_reflectance": 0.8100187182426453,
+        "sr_mean_reflectance": 0.8542826771736145,
+        "diff_percent": 5.464560007576238
+      }
+    ],
+    "per_band_error": [
+      {
+        "band": "B02",
+        "rmse": 0.09392749518156052,
+        "mean_abs_error": 0.07757385075092316,
+        "correlation": 0.7846015581418512
+      },
+      {
+        "band": "B03",
+        "rmse": 0.06875631958246231,
+        "mean_abs_error": 0.05659786984324455,
+        "correlation": 0.7631942828204596
+      },
+      {
+        "band": "B04",
+        "rmse": 0.08864777535200119,
+        "mean_abs_error": 0.07689998298883438,
+        "correlation": 0.8468577488753714
+      },
+      {
+        "band": "B08",
+        "rmse": 0.07608028501272202,
+        "mean_abs_error": 0.05957585573196411,
+        "correlation": 0.8407694649903917
+      }
+    ]
+  },
+  "spatial_validation": {
+    "mean_gradient_magnitude": 0.27250832319259644,
+    "sharpness_ratio_vs_reference": 1.0829698408955433
+  },
+  "uncertainty_summary": {
+    "confidence_score": 7.822046279907227,
+    "confidence_mean": 0.07822046428918839,
+    "confidence_std": 0.0005845166160725057,
+    "max_uncertainty": 0.9238169193267822,
+    "mean_uncertainty": 0.9217795133590698,
+    "high_uncertainty_pixel_percent": 100.0
+  }
+}

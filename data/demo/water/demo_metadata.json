@@ -1,0 +1,60 @@
+{
+  "id": "water",
+  "category": "Water",
+  "title": "Coastal / Inland Water Body",
+  "location": "Synthetic demonstration scene (not real satellite data)",
+  "gsd_input_meters": 10.0,
+  "gsd_output_meters": 2.5,
+  "scale_factor": 4,
+  "bands": [
+    "B02",
+    "B03",
+    "B04",
+    "B08"
+  ],
+  "band_descriptions": [
+    "B02 (Blue, 10m)",
+    "B03 (Green, 10m)",
+    "B04 (Red, 10m)",
+    "B08 (NIR, 10m)"
+  ],
+  "crs": "EPSG:32643 (WGS 84 / UTM Zone 43N)",
+  "scene_note": "Synthetic Sentinel-2-like demonstration scene. Not real satellite imagery.",
+  "reference_note": "Ground-truth reference computed from the degradation-free synthetic HR source (2.5 m) used only to score reconstruction; the 10 m input is the degraded product of that reference via model.datasets.degradation.",
+  "model": "GeoSR-ESRGAN (trained, 2 epochs, geosr loss)",
+  "metrics": {
+    "psnr": 28.15171241760254,
+    "ssim": 0.7087187170982361,
+    "sam": 15.292896270751953,
+    "ergas": 7.5439348220825195
+  },
+  "independent_metric_check": {
+    "psnr": 28.152,
+    "ssim": 0.7087,
+    "sam": 15.293,
+    "ergas": 7.544
+  },
+  "confidence_score": 6.319403648376465,
+  "uncertainty_summary": {
+    "confidence_score": 6.319403648376465,
+    "confidence_mean": 0.06319403648376465,
+    "confidence_std": 0.0003283194964751601,
+    "max_uncertainty": 0.9379706382751465,
+    "mean_uncertainty": 0.9368059635162354,
+    "high_uncertainty_pixel_percent": 100.0
+  },
+  "inference_time_ms": 195.9,
+  "reference_available": true,
+  "artifacts": {
+    "lr_input": "lr_input.tif",
+    "sr_output": "sr_output.tif",
+    "confidence_png": "confidence_preview.png",
+    "confidence_tif": "confidence_sr_output.tif",
+    "validation_report": "validation_report.json"
+  },
+  "web_previews": {
+    "lr_preview": "/samples/sih/water/lr_preview.png",
+    "sr_preview": "/samples/sih/water/sr_preview.png",
+    "confidence_preview": "/samples/sih/water/confidence_preview.png"
+  }
+}
