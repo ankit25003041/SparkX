@@ -69,6 +69,7 @@ data/cache/*
 # ML Model Checkpoints & Logs
 model/checkpoints/*
 model/weights/*
+model/outputs/
 !model/checkpoints/.gitkeep
 !model/weights/.gitkeep
 *.pt
@@ -78,6 +79,9 @@ model/weights/*
 runs/
 wandb/
 tensorboard/
+
+# Backend runtime storage & job artifacts
+backend/storage/
 
 # IDE & Editors
 .vscode/

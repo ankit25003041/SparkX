@@ -1,22 +1,25 @@
-# GeoSR — AI-Powered Satellite Super Resolution Mapping
+# GeoSR — AI-Powered Satellite Super-Resolution Mapping
 
-<<<<<<< HEAD
-**SIH 2026 Problem Statement 26142:**  
-*"Deep Learning Based Super Resolution Mapping (SRM) from Medium Resolution Satellite Imageries"*
-
----
-
-## 🛰️ Project Overview
-
-**GeoSR** is an end-to-end AI and geospatial processing platform engineered to convert medium-resolution Sentinel-2 satellite imagery (~10 m GSD) into high-resolution spatial products (<4 m GSD, targeting 2.5 m) while strictly preserving:
-1. **Spatial Structure & Sharpness:** Resolving sub-pixel urban infrastructure, field boundaries, and hydrological features.
-2. **Spectral Fidelity & Radiometry:** Preserving multispectral reflectance ratios across bands (B02–B12) and vegetation indices (NDVI, NDWI, EVI).
-3. **Geospatial Integrity:** Preserving projection coordinates (CRS/EPSG), geotransforms, and sub-pixel geographic alignment.
-4. **Uncertainty Quantification:** Estimating pixel-level confidence and model variance maps to prevent hallucination misinterpretations in critical remote sensing workflows.
+> **SIH 2026 Problem Statement 26142** — *"Deep Learning Based Super Resolution Mapping (SRM) from Medium Resolution Satellite Imageries"*
+>
+> GeoSR converts medium-resolution Sentinel-2 imagery (10 m GSD) into high-resolution geospatial products (2.5 m GSD target) while preserving **spatial structure**, **spectral radiometry**, **geospatial integrity (CRS/transform)**, and surfacing **pixel-wise uncertainty**.
 
 ---
 
-## 👥 Team SparkX & Responsibilities
+## Status at a Glance
+
+| Area | Status | Evidence |
+|---|---|---|
+| Frontend (Next.js dashboard) | ✅ Implemented | Lint 0 errors · `tsc` clean · `next build` ✓ (8/8 routes prerendered) |
+| Backend (FastAPI + geospatial) | ✅ Implemented | 34/34 pytest pass · e2e upload→process→download verified |
+| Model (PyTorch GeoSR-ESRGAN) | ✅ Trained checkpoint | 2 epochs, val PSNR 27.92 / SSIM 0.690 / SAM 10.60° |
+| SIH demo (`/demo`) | ✅ Implemented | Real measured metrics on 3 synthetic scenes (see [Demo](#demo)) |
+
+Legend: ✅ Implemented · 🧪 Experimental · ⌛ Planned
+
+---
+
+## Team SparkX & Responsibilities
 
 - **Ankit Singh Tomar** — Backend & Geospatial Engine Architect
 - **Tanishk** — Frontend & Interactive GIS Dashboard Lead
@@ -25,62 +28,201 @@
 
 ---
 
-## 🏗️ Architecture & Project Structure
+## Architecture & Project Structure
 
 ```
 GeoSR/
-├── frontend/             # Next.js 15+, React 19, TypeScript, Tailwind CSS, Lucide, Recharts, Leaflet
-├── backend/              # FastAPI, Pydantic, Uvicorn (Phase 2)
-├── model/                # PyTorch Super-Resolution Architectures (Phases 5-6)
-├── data/                 # Sentinel-2 L2A datasets, raw tiles, processed samples
-│   ├── raw/              # Original Sentinel-2 GeoTIFFs
-│   ├── processed/        # Chunks, preprocessed arrays
-│   └── cache/            # Inference cache
-├── scripts/              # Data downloading, preparation, and benchmarking scripts
-├── notebooks/            # Jupyter exploration and model ablation notebooks
-├── tests/                # Unit and integration tests
-├── docs/                 # System architecture and SIH documentation
-├── docker/               # Containerized deployment files
-├── README.md             # Project documentation
-├── .gitignore            # Git exclusion rules
-└── docker-compose.yml    # Multi-service container orchestration
+├── frontend/             # Next.js 16 (React 19, TS, Tailwind, Leaflet, Recharts)
+│   └── src/app/          # Routes: / (dashboard), /upload, /processing/[id],
+│                         # /results/[id], /explorer, /demo, /demo/[id], /analytics
+├── backend/              # FastAPI + Uvicorn geospatial service
+│   └── app/
+│       ├── api/routes/   # upload, jobs (status/results/metrics/download/preview/report), health
+│       ├── processing/   # 8-stage pipeline, tiler, reconstruction, normalization,
+│       │                 # preprocessing, raster_reader, geotiff_writer, geosr_backend
+│       ├── services/     # job_manager (async, thread-safe, in-memory)
+│       ├── schemas/      # pydantic models
+│       └── utils/geo_utils.py
+├── model/                # PyTorch GeoSR-ESRGAN (archs, datasets, losses, train, eval, inference)
+├── data/                 # Sentinel-2 samples + Phase 9 demo scenes (see DATASET.md)
+├── docs/                 # Architecture, dataset, model, evaluation, demo docs
+└── docker/               # (planned) containerized deployment
 ```
 
----
-
-## 🗺️ Incremental Development Roadmap
-
-| Phase | Milestone | Status |
-|---|---|---|
-| **Phase 1** | **Frontend GIS Dashboard & UI Architecture** | 🚀 **In Progress** |
-| **Phase 2** | **Backend REST API (FastAPI & Pydantic)** | ⏳ Scheduled |
-| **Phase 3** | **Geospatial Processing Engine (Rasterio & GDAL)** | ⏳ Scheduled |
-| **Phase 4** | **Dataset Pipeline & Paired Training Preparation** | ⏳ Scheduled |
-| **Phase 5** | **Baseline Super-Resolution Pipelines** | ⏳ Scheduled |
-| **Phase 6** | **Advanced Deep-Learning SRM Models** | ⏳ Scheduled |
-| **Phase 7** | **Validation, Radiometric Fidelity & Uncertainty Engine** | ⏳ Scheduled |
-| **Phase 8** | **Full System Integration & End-to-End Testing** | ⏳ Scheduled |
-| **Phase 9** | **Production Optimization & SIH Grand Finale Demo** | ⏳ Scheduled |
+**Request flow:** a user uploads a GeoTIFF → FastAPI validates it and opens a job → the **8-stage `GeoSRPipeline`** ([docs/architecture.md](./docs/architecture.md)) reads raster I/O via **rasterio**, selects the 4 Sentinel-2 10 m bands (B02/B03/B04/B08), normalizes to TOA reflectance, tiles with overlap, runs the **torch SR model** (loaded once per job, CPU), reassembles with Hann-window feathering, denormalizes, restores NoData, writes a CRS-preserving **GeoTIFF**, and emits a **confidence/uncertainty** map + validation report. The frontend polls `GET /api/jobs/{id}/status` and renders before/after + metrics.
 
 ---
 
-## 🚀 Getting Started with Phase 1 (Frontend)
+## Tech Stack
 
-### Prerequisites
-- Node.js >= 18.x (v24.x recommended)
-- npm >= 9.x
+- **Frontend:** Next.js 16.3 (Turbopack), React 19, TypeScript, Tailwind CSS v4, Lucide, Recharts, Leaflet
+- **Backend:** FastAPI 0.109+, Pydantic v2, Uvicorn, rasterio 1.5, numpy, pyproj, affine
+- **Model:** PyTorch 2.13 (CPU build used here), numpy 2.x
+- **Data:** Sentinel-2 L2A style multispectral GeoTIFF (uint16 DN, ÷10000 = reflectance)
 
-### Run Development Server
+---
+
+## Installation
+
+### Frontend
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev          # http://localhost:3000
 ```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
-=======
-Ankit -- Backend  
-Tanishk -- frontend 
-Anvay -- ppt 
 
-Ashika , Ashta , Bhavana -- ML model
->>>>>>> 6699d98664aecdf47d5a4327141e784cb564c76b
+### Backend
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --host 0.0.0.0 --port 8000   # http://127.0.0.1:8000
+```
+To enable the **real SR model** (instead of the deterministic bicubic baseline), set:
+```bash
+export GEOSR_CHECKPOINT=/path/to/checkpoint_best.pt
+```
+Then restart: the model is loaded once per process and `is_demo` becomes `false` in job metrics.
+
+### Model (training / batch inference)
+```bash
+cd model
+pip install -r requirements.txt
+python model/training/train.py            # trains GeoSR-ESRGAN (config-driven)
+python model/inference.py --input data/sample_sentinel2_10m.tif \
+  --checkpoint model/checkpoints/advanced_geosr_baseline_run/checkpoint_best.pt \
+  --output model/outputs/sr_out.tif --scale 4
+```
+
+---
+
+## Dataset
+
+GeoSR operates on **4-band Sentinel-2 10 m imagery (B02 Blue, B03 Green, B04 Red, B08 NIR)**. Pixel values are uint16 DN scaled by 10000 → TOA reflectance in `[0, 1.5]`.
+
+- **Training data:** synthetic 40 m→10 m paired samples generated by `model/datasets/degradation.py` (controlled bicubic downscale + noise). See [docs/dataset.md](./docs/dataset.md) and [`model/datasets/DATASET.md`](./model/datasets/DATASET.md).
+- **Sample:** `data/sample_sentinel2_10m.tif` — 256×256, EPSG:32643, 10 m, uint16.
+- **SIH demo scenes:** `data/demo/{urban,agriculture,water}/` plus web previews in `frontend/public/samples/sih/`.
+
+---
+
+## Training
+
+[docs/model.md](./docs/model.md) · [docs/evaluation.md](./docs/evaluation.md)
+
+| Setting | Value |
+|---|---|
+| Architecture | GeoSR-ESRGAN (Residual-in-Residual Dense + ESRGAN-style upscaling) |
+| Input bands | 4 (B02, B03, B04, B08) @ 10 m |
+| Scale | 4× (10 m → 2.5 m target) |
+| Patch size | 64 px |
+| Epochs | 2 (seed 42) |
+| Optimizer | AdamW, lr 1e-4, weight_decay 1e-5, cosine schedule |
+| Loss | GeoSR compound = L1 (1.0) + spectral (0.2) + SSIM (0.1) + edge (0.05) |
+| Checkpoint | `model/checkpoints/advanced_geosr_baseline_run/checkpoint_best.pt` |
+
+Final (epoch 1, val split): **PSNR 27.923 dB · SSIM 0.690 · SAM 10.604° · ERGAS 6.912.**
+
+---
+
+## Inference
+
+Two inference entry points:
+
+1. **Batch CLI** — `model/inference.py` (whole-image or 512-px tiled sliding window with Hann blending). Reads DN uint16 GeoTIFF → reflectance → model → uint16 GeoTIFF with **preserved CRS, geotransform, band descriptions**; emits confidence map + validation report.
+2. **Backend service** — `backend/app/processing/geosr_backend.py` wraps the checkpoint as a numpy→numpy `model_fn` consumed by the pipeline. **Loaded once per job**; never per-tile. Falls back to the deterministic bicubic baseline when no checkpoint or torch is unavailable (`is_demo=true`).
+
+---
+
+## API
+
+Full spec at `/docs` (Swagger UI) when the backend runs. Key endpoints:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/upload` | Validate GeoTIFF + create job |
+| `POST` | `/api/jobs/{id}/process` | Start 8-stage SR pipeline (async) |
+| `GET`  | `/api/jobs/{id}/status` | Poll progress (0–100, stage, elapsed) |
+| `GET`  | `/api/jobs/{id}` | Full job detail |
+| `GET`  | `/api/jobs/{id}/results` | Preview + download + report URLs |
+| `GET`  | `/api/jobs/{id}/metrics` | PSNR/SSIM/SAM/ERGAS + confidence |
+| `GET`  | `/api/jobs/{id}/download` | Stream the super-resolved GeoTIFF |
+| `GET`  | `/api/jobs/{id}/preview/{low_res\|super_res\|uncertainty}` | PNG thumbnails |
+| `GET`  | `/api/jobs/{id}/validation-report` | Phase 7 unified report JSON |
+| `DELETE` | `/api/jobs/{id}` | Cancel a queued/processing job |
+
+Frontend API client: `frontend/src/lib/api.ts` (`fetchJobStatus`, `fetchJobResults`, `fetchValidationReport`).
+
+---
+
+## Demo (Phase 9 SIH Demonstration)
+
+`/demo` (scene picker) and `/demo/{urban|agriculture|water}` are **fully implemented** and serve real precomputed artifacts. The metrics below are **real** — measured directly from the trained checkpoint against synthetic 2.5 m degradation references. No browser simulation is performed.
+
+| Scene | PSNR (dB) | SSIM | SAM (°) | ERGAS | Confidence | Inf. time |
+|---|---|---|---|---|---|---|
+| Urban | 23.64 | 0.430 | 7.53 | 4.76 | 9.1% | 402 ms |
+| Agriculture | 25.20 | 0.512 | 7.61 | 5.26 | 7.8% | 163 ms |
+| Water | 28.15 | 0.709 | 15.29 | 7.54 | 6.3% | 196 ms |
+
+**How the demo differs from the live uploader:** the demo metrics are *precomputed offline* (so they are available with no GPU/runtime). The live `/upload` flow computes metrics **at runtime** (no HR reference is available for real uploads, so PSNR/SSIM/SAM are `null` and confidence comes from self-consistency). See [docs/demo.md](./docs/demo.md).
+
+```bash
+# Regenerate the Phase 9 precompute (requires checkpoint + data/sample_sentinel2_10m.tif)
+export GEOSR_CHECKPOINT=model/checkpoints/advanced_geosr_baseline_run/checkpoint_best.pt
+python model/demo/prepare_sih_demo.py
+```
+
+---
+
+## Evaluation
+
+Quality gates and measured values (reference available only in the demo precompute):
+
+| Metric | Meaning | Demo (real SR, no ref) | Precomputed demo (with ref) |
+|---|---|---|---|
+| **PSNR** | Reconstruction fidelity (dB) | `null` | Urban 23.64 / Water 28.15 |
+| **SSIM** | Structural similarity | `null` | Urban 0.430 / Water 0.709 |
+| **SAM** | Spectral angle (°, ↓ better) | — | Urban 7.53 / Water 15.29 |
+| **ERGAS** | Global relative error (↓) | — | Urban 4.76 / Water 7.54 |
+| **Confidence** | Self-consistency (0–100) | 6.6 (live) / 6.3–9.1 (demo) | — |
+
+Verification script: `backend/tests/`, [docs/evaluation.md](./docs/evaluation.md).
+
+---
+
+## Testing & Verification
+
+```bash
+# Backend
+python -m pytest -q            # 34 passed
+
+# Frontend
+npm run lint                   # 0 errors
+npx tsc --noEmit               # type-clean
+npm run build                  # compiled successfully, 8/8 routes
+
+# End-to-end (real SR, baseline=false): upload sample -> 1024x1024 GeoTIFF,
+# 2.5 m resolution, EPSG:32643 preserved, all previews + report returned.
+```
+
+---
+
+## Limitations
+
+- **Out-of-distribution scale.** The model is **trained on synthetic 40 m→10 m** pairs but is applied to **10 m→2.5 m**. The demo metrics are an honest measure of this extrapolation regime, not "real" sub-2.5 m detail recovery. This is the single most important caveat (see [docs/dataset.md](./docs/dataset.md) and [docs/model.md](./docs/model.md)).
+- **Synthetic references.** Demo HR references are procedurally generated, not real satellite imagery.
+- **4-band only.** Only B02/B03/B04/B08 are processed. Full 12-band Sentinel-2 is ⌛ planned.
+- **No HR reference in live uploads.** Quantitative metrics are `null` unless a reference is supplied; confidence is then self-consistency-based.
+- **CPU inference.** Tested on CPU builds; GPU serving is ⌛ planned (latency is CPU-bound here).
+- **Gitignored binaries.** The trained checkpoint (`*.pt`, `model/checkpoints/*`) and the sample GeoTIFF (`*.tif`) are **not** in the repository. The committed, reproducible artifacts are the demo metric JSON (`frontend/src/data/sihDemoScenes.ts`), the web preview PNGs (`frontend/public/samples/sih/`), and the JSON reports under `data/demo/`. To reproduce real-SR runs, provide the checkpoint + a Sentinel-2 GeoTIFF locally.
+
+---
+
+## Future Work (planned)
+
+- 12-band full-spectrum Sentinel-2 SR (SWIR, visible, vegetation indices).
+- GPU-accelerated serving + batch tiling for large scenes (> 256 px).
+- Real Copernicus (SciHub / CDSE) raster ingestion + on-the-fly tiling.
+- Input-perturbation ensemble uncertainty in the backend (currently only the CLI supports it).
+- `GET /api/jobs` list endpoint + persistent (DB-backed) job store.
+- GIS Explorer wired to real georeferenced rasters (currently demo presets).
