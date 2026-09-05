@@ -1,0 +1,11 @@
+{
+  "input": "data\\sample_sentinel2_10m.tif",
+  "reference": "data\\sample_sentinel2_10m.tif",
+  "scale_factor": 4,
+  "output_gsd_meters": 2.5,
+  "metrics": {
+    "psnr": 33.19351929311243,
+    "ssim": 0.8111566783941481,
+    "sam_degrees": 5.977692158390001
+  }
+}

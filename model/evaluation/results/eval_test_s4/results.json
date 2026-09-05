@@ -1,0 +1,43 @@
+{
+  "bicubic": {
+    "mean_psnr": 44.069068720903246,
+    "mean_ssim": 0.9851433838988073,
+    "mean_sam_degrees": 1.3126381266741183,
+    "std_psnr": 0.0,
+    "std_ssim": 0.0,
+    "std_sam_degrees": 0.0,
+    "per_sample": [
+      {
+        "patch_index": 0,
+        "psnr": 44.069068720903246,
+        "ssim": 0.9851433838988073,
+        "sam_degrees": 1.3126381266741183
+      }
+    ]
+  },
+  "cnn_sr": {
+    "mean_psnr": 32.606722280991804,
+    "mean_ssim": 0.8111967625450498,
+    "mean_sam_degrees": 6.020436097942934,
+    "std_psnr": 0.0,
+    "std_ssim": 0.0,
+    "std_sam_degrees": 0.0,
+    "per_sample": [
+      {
+        "patch_index": 0,
+        "tile_yx": [
+          128,
+          0
+        ],
+        "psnr": 32.606722280991804,
+        "ssim": 0.8111967625450498,
+        "sam_degrees": 6.020436097942934
+      }
+    ]
+  },
+  "delta_cnn_minus_bicubic": {
+    "psnr_gain_db": -11.462346439911443,
+    "ssim_gain": -0.1739466213537575,
+    "sam_reduction_deg": -4.707797971268816
+  }
+}
