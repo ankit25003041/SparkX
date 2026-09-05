@@ -21,6 +21,7 @@ import { SCENE_PRESETS } from '../../../lib/mockData';
 import {
   BandCombination,
   ScenePreset,
+  SpectralPoint,
   ValidationMetrics,
   ValidationReport,
   JobResultsResponse,
@@ -83,18 +84,25 @@ export default function ResultsPage() {
   };
 
   const handleDownloadGeoTIFF = () => {
+    if (results?.download_url) {
+      window.open(results.download_url, '_blank', 'noopener,noreferrer');
+      showNotification(`Downloading Cloud-Optimized GeoTIFF via backend stream`);
+      return;
+    }
     const filename = `GeoSR_Sentinel2_4x_${matchedPreset.id}_EPSG32643.tif`;
     showNotification(`Downloading Cloud-Optimized GeoTIFF: ${filename}`);
   };
 
   const handleDownloadReport = () => {
-    const filename = report
-      ? `GeoSR_Validation_Report_${matchedPreset.id}.json`
-      : `GeoSR_Validation_Report_${matchedPreset.id}.json`;
+    if (results?.validation_report_url) {
+      window.open(results.validation_report_url, '_blank', 'noopener,noreferrer');
+      showNotification(`Downloading validation report`);
+      return;
+    }
     showNotification(
       report
-        ? `Downloading validation report: ${filename}`
-        : `Downloading SIH Compliance Report: ${filename}`
+        ? `Downloading validation report: GeoSR_Validation_Report_${matchedPreset.id}.json`
+        : `Downloading SIH Compliance Report: GeoSR_Validation_Report_${matchedPreset.id}.json`
     );
   };
 
@@ -103,6 +111,26 @@ export default function ResultsPage() {
   const demoMetrics: ValidationMetrics = matchedPreset.defaultMetrics;
 
   const referenceAvailable = !!report?.reference_available;
+
+  type WireSpectralPoint = {
+    band: string;
+    name: string;
+    wavelength_nm?: number;
+    original_reflectance?: number;
+    sr_reflectance?: number;
+    diff_percent?: number;
+  };
+  const spectralRows: SpectralPoint[] =
+    isReal && results?.spectral_points?.length
+      ? (results.spectral_points as WireSpectralPoint[]).map((sp) => ({
+          band: (sp.band || 'B02') as SpectralPoint['band'],
+          name: sp.name || sp.band,
+          wavelengthNm: sp.wavelength_nm ?? 0,
+          originalReflectance: sp.original_reflectance ?? 0,
+          srReflectance: sp.sr_reflectance ?? 0,
+          diffPercent: sp.diff_percent ?? 0,
+        }))
+      : matchedPreset.spectralPoints;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8 space-y-8">
@@ -371,7 +399,7 @@ export default function ResultsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                {matchedPreset.spectralPoints.map((point) => (
+                {spectralRows.map((point) => (
                   <tr key={point.band} className="hover:bg-slate-950/40 transition-colors">
                     <td className="py-2.5 font-bold text-cyan-400">{point.band}</td>
                     <td className="py-2.5 text-slate-200">{point.name}</td>

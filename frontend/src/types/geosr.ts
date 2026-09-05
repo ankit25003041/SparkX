@@ -169,6 +169,7 @@ export interface JobResultLinks {
 export interface JobResultsResponse {
   job_id: string;
   status: JobStatus;
+  metadata?: GeoTIFFMetadata | null;
   metrics?: ValidationMetrics;
   spectral_points?: SpectralPoint[];
   low_res_preview_url?: string;
@@ -178,6 +179,45 @@ export interface JobResultsResponse {
   download_url?: string;
   is_demo: boolean;
   message: string;
+}
+
+export interface JobStatusResponse {
+  job_id: string;
+  status: JobStatus;
+  progress: number;
+  stage: string;
+  elapsed_seconds: number;
+  error_message?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProcessJobRequest {
+  model?: string;
+  scale_factor?: number;
+  band_combination?: string;
+  overlap_percent?: number;
+  tile_size?: number;
+  use_tiling?: boolean;
+  preset_id?: string | null;
+}
+
+export interface JobDetailResponse {
+  job_id: string;
+  status: JobStatus;
+  filename?: string | null;
+  metadata?: GeoTIFFMetadata | null;
+  params?: ProcessJobRequest;
+  progress: number;
+  stage: string;
+  elapsed_seconds: number;
+  metrics?: ValidationMetrics | null;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+  error_message?: string | null;
+  output_geotiff_path?: string | null;
+  is_demo: boolean;
 }
 
 export interface AnalysisRecord {

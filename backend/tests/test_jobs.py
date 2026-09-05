@@ -104,3 +104,45 @@ def test_preset_job_execution(client: TestClient):
     assert resp.status_code == 202
     job_id = resp.json()["job_id"]
     assert job_id.startswith("job_")
+
+
+def test_job_status_exposes_eight_stage_coordinate(client: TestClient, sample_geotiff: Path):
+    """Phase 8 orchestrator drives job status through the 8-stage
+    PipelineStage coordinate system; a completed job reports the EXPORT stage
+    (and a download URL). Full in-run ordering is covered by test_orchestrator."""
+    from app.processing.orchestrator import PipelineStage
+
+    with open(sample_geotiff, "rb") as f:
+        upload_resp = client.post("/api/upload", files={"file": ("t.tif", f, "image/tiff")})
+    job_id = upload_resp.json()["job_id"]
+    client.post(f"/api/jobs/{job_id}/process", json={
+        "model": "geosr_esrgan", "scale_factor": 2, "band_combination": "RGB",
+        "overlap_percent": 10, "tile_size": 64, "use_tiling": True,
+    })
+
+    import time as _t
+    completed = False
+    for _ in range(40):
+        st = client.get(f"/api/jobs/{job_id}/status").json()
+        assert st["progress"] >= 0 and st["progress"] <= 100
+        if st["status"] == "COMPLETED":
+            completed = True
+            break
+        _t.sleep(0.25)
+
+    assert completed, "job did not reach COMPLETED"
+    final = client.get(f"/api/jobs/{job_id}/status").json()
+    assert final["stage"] == PipelineStage.EXPORT.description
+    assert final["progress"] == 100
+
+
+def test_cancel_route_transitions_job(client: TestClient, sample_geotiff: Path):
+    with open(sample_geotiff, "rb") as f:
+        upload_resp = client.post("/api/upload", files={"file": ("c.tif", f, "image/tiff")})
+    job_id = upload_resp.json()["job_id"]
+    client.post(f"/api/jobs/{job_id}/process", json={
+        "model": "geosr_esrgan", "scale_factor": 2, "band_combination": "RGB",
+        "overlap_percent": 10, "tile_size": 64, "use_tiling": True,
+    })
+    resp = client.delete(f"/api/jobs/{job_id}")
+    assert resp.status_code in (200, 409)

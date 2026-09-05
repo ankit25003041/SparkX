@@ -42,12 +42,29 @@ async def upload_geotiff(
             detail=f"Unsupported file extension '{ext}'. Accepted formats: {', '.join(ALLOWED_EXTENSIONS)}"
         )
 
+    # 2. Sanitize filename to prevent path traversal in the on-disk save path.
+    #    Only the basename is retained; parent references and null bytes are
+    #    rejected defensively before any file is written.
+    safe_name = Path(file.filename).name
+    if not safe_name or safe_name in {".", ".."} or "\x00" in safe_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid filename provided in upload payload"
+        )
+    # Re-validate the extension after sanitization to remain defensive.
+    ext = Path(safe_name).suffix
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported file extension '{ext}'. Accepted formats: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+
     # Generate temporary upload folder for this file
     temp_job_id = f"job_{uuid.uuid4().hex[:12]}"
     upload_job_dir = settings.uploads_path / temp_job_id
     upload_job_dir.mkdir(parents=True, exist_ok=True)
-    
-    saved_file_path = upload_job_dir / file.filename
+
+    saved_file_path = upload_job_dir / safe_name
 
     # 2. Stream to disk and enforce max size limit
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
@@ -76,7 +93,7 @@ async def upload_geotiff(
         # 3. Validate raster integrity and extract geospatial metadata
         metadata = validate_and_extract_metadata(
             file_path=saved_file_path,
-            filename=file.filename,
+            filename=safe_name,
             job_id=temp_job_id,
             filesize_bytes=total_bytes
         )

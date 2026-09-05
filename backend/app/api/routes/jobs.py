@@ -107,6 +107,33 @@ async def process_preset_scene(
         )
 
 
+@router.delete(
+    "/{job_id}",
+    response_model=JobStatusResponse,
+    summary="Cancel a queued or processing job",
+)
+async def cancel_job_route(
+    job_id: str,
+    job_mgr: JobManager = Depends(get_job_mgr),
+):
+    """Cancels an in-flight (QUEUED/PROCESSING) job. Terminal states are returned
+    unchanged; the cancellation is a best-effort signal the worker honours on its
+    next status update."""
+    cancelled = job_mgr.cancel_job(job_id)
+    status = job_mgr.get_job_status(job_id)
+    if not status:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job '{job_id}' not found",
+        )
+    if not cancelled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Job '{job_id}' is in state '{status.status}' and cannot be cancelled",
+        )
+    return status
+
+
 @router.get(
     "/{job_id}/status",
     response_model=JobStatusResponse,

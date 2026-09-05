@@ -50,3 +50,19 @@ def test_upload_valid_geotiff(client: TestClient, sample_geotiff: Path):
     assert len(data["transform"]) == 6
     assert data["filesize_bytes"] > 0
     assert len(data["bands_available"]) == 4
+
+
+def test_upload_sanitizes_path_traversal_filename(client: TestClient, sample_geotiff: Path):
+    """A filename containing path-traversal components must be reduced to its
+    basename before being written to disk or recorded as metadata (Phase 8
+    security hardening)."""
+    with open(sample_geotiff, "rb") as f:
+        response = client.post(
+            "/api/upload",
+            files={"file": ("../../etc/evil_payload.tif", f, "image/tiff")},
+        )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["filename"] == "evil_payload.tif"
+    assert "/" not in data["filename"]
+    assert ".." not in data["filename"]
