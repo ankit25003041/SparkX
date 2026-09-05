@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { Map as MapIcon } from 'lucide-react';
 import { SCENE_PRESETS } from '../../lib/mockData';
-import { ScenePreset } from '../../types/geosr';
+import { fetchJobResults } from '../../lib/api';
+import { ScenePreset, JobResultsResponse } from '../../types/geosr';
 import { LayerControl, MapOverlayId } from '../../components/LayerControl';
 import { LoadingState } from '../../components/LoadingState';
 
@@ -28,18 +29,43 @@ const MapViewer = dynamic(
 function GISExplorerContent() {
   const searchParams = useSearchParams();
   const sceneParam = searchParams.get('scene');
+  const jobParam = searchParams.get('job');
 
-  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
+  const fallbackPreset: ScenePreset =
+    (sceneParam ? SCENE_PRESETS.find((p) => p.id === sceneParam) : null) || SCENE_PRESETS[0];
 
-  const selectedPreset: ScenePreset = 
-    (selectedPresetId ? SCENE_PRESETS.find((p) => p.id === selectedPresetId) : null) ||
-    (sceneParam ? SCENE_PRESETS.find((p) => p.id === sceneParam) : null) ||
-    SCENE_PRESETS[0];
-
+  const [selectedPreset, setSelectedPreset] = useState<ScenePreset>(fallbackPreset);
   const [activeOverlay, setActiveOverlay] = useState<MapOverlayId>('sr_overlay');
   const [overlayOpacity, setOverlayOpacity] = useState<number>(85);
   const [isBeforeAfterToggled, setIsBeforeAfterToggled] = useState<boolean>(true);
   const [showTileBoundaries, setShowTileBoundaries] = useState<boolean>(false);
+  const [isRealData, setIsRealData] = useState<boolean>(false);
+
+  // When a real job id is supplied, fetch its preview rasters from the backend
+  // and override the demo preset URLs so the GIS explorer renders live SR output.
+  useEffect(() => {
+    if (!jobParam) return;
+    let cancelled = false;
+    fetchJobResults(jobParam).then((r: JobResultsResponse | null) => {
+      if (!r || !r.metadata || cancelled) return;
+      const meta = r.metadata;
+      setSelectedPreset((prev) => ({
+        ...prev,
+        id: `job_${jobParam}`,
+        title: meta.filename || prev.title,
+        crs: meta.crs || prev.crs,
+        cloudCoverPercent: meta.cloudCoverPercent,
+        coordinates: (meta.center as [number, number]) || prev.coordinates,
+        lowResImageUrl: r.low_res_preview_url || prev.lowResImageUrl,
+        superResImageUrl: r.super_res_preview_url || prev.superResImageUrl,
+        uncertaintyMapUrl: r.uncertainty_map_url || prev.uncertaintyMapUrl,
+      }));
+      setIsRealData(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobParam]);
 
   return (
     <div className="flex-1 flex flex-col h-[calc(100vh-4rem)] bg-slate-950 overflow-hidden relative select-none">
@@ -52,18 +78,33 @@ function GISExplorerContent() {
           </div>
           <span className="text-slate-600">|</span>
           <div className="flex items-center gap-2 text-slate-300">
-            <span className="text-slate-500">SCENE:</span>
-            <select
-              value={selectedPreset.id}
-              onChange={(e) => setSelectedPresetId(e.target.value)}
-              className="bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-cyan-300 focus:outline-none"
-            >
-              {SCENE_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.title} ({preset.category})
-                </option>
-              ))}
-            </select>
+            {jobParam ? (
+              <span className="text-xs text-emerald-300 font-mono">
+                Real Job: <span className="text-cyan-300">{selectedPreset.title}</span>
+              </span>
+            ) : (
+              <>
+                <span className="text-slate-500">SCENE:</span>
+                <select
+                  value={selectedPreset.id}
+                  onChange={(e) => setSelectedPreset(
+                    SCENE_PRESETS.find((p) => p.id === e.target.value) || SCENE_PRESETS[0]
+                  )}
+                  className="bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-cyan-300 focus:outline-none"
+                >
+                  {SCENE_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.title} ({preset.category})
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            {isRealData && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800">
+                LIVE DATA
+              </span>
+            )}
           </div>
         </div>
 

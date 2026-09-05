@@ -1,38 +1,184 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { 
-  Satellite, 
+  ScenePreset, 
+  SuperResolutionModelId, 
+  ScaleFactor, 
+  BandCombination, 
+  ViewMode, 
+  GeoTIFFMetadata, 
+  ProcessingState,
+  ValidationMetrics,
+  SpectralPoint
+} from '../types/geosr';
+import { geoSRApi } from '../services/api';
+import { SCENE_PRESETS, SYSTEM_TELEMETRY, RECENT_ANALYSES } from '../lib/mockData';
+import { SIH_DEMO_SCENES } from '../data/sihDemoScenes';
+import { StatusBadge } from '../components/StatusBadge';
+import { MetricCard } from '../components/MetricCard';
+import { AnalysisCard } from '../components/AnalysisCard';
+import { 
+  Sparkles, 
+  ArrowRight, 
   Upload, 
   Map, 
   BarChart3, 
-  Zap, 
-  ShieldCheck, 
-  ArrowRight, 
-  Sparkles, 
-  Clock, 
-  Layers, 
-  CheckCircle2, 
   Activity, 
-  SlidersHorizontal,
-  Compass,
-  FileCode2
+  Zap, 
+  Layers, 
+  ShieldCheck, 
+  Compass, 
+  Clock,
+  SlidersHorizontal
 } from 'lucide-react';
-import { MetricCard } from '../components/MetricCard';
-import { AnalysisCard } from '../components/AnalysisCard';
-import { StatusBadge } from '../components/StatusBadge';
-import { RECENT_ANALYSES, SCENE_PRESETS, SYSTEM_TELEMETRY } from '../lib/mockData';
 
-export default function DashboardPage() {
+export default function GeoSRDashboardPage() {
+  const [selectedPreset, setSelectedPreset] = useState<ScenePreset>(SCENE_PRESETS[0]);
+  const [selectedModel, setSelectedModel] = useState<SuperResolutionModelId>('geosr_esrgan');
+  const [scaleFactor, setScaleFactor] = useState<ScaleFactor>(4);
+  const [bandCombination, setBandCombination] = useState<BandCombination>('RGB');
+  const [viewMode, setViewMode] = useState<ViewMode>('swipe');
+  const [overlapPercent, setOverlapPercent] = useState<number>(20);
+  const [currentCoords, setCurrentCoords] = useState<[number, number]>(selectedPreset.coordinates);
+  const [customMetadata, setCustomMetadata] = useState<GeoTIFFMetadata | null>(null);
+
+  const [metrics, setMetrics] = useState<ValidationMetrics>(selectedPreset.defaultMetrics);
+  const [spectralPoints, setSpectralPoints] = useState<SpectralPoint[]>(selectedPreset.spectralPoints);
+
+  const [processingState, setProcessingState] = useState<ProcessingState>({
+    status: 'idle',
+    progress: 0,
+    elapsedSeconds: 0,
+  });
+
+  const [isArchitectureModalOpen, setIsArchitectureModalOpen] = useState<boolean>(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
+
+  // Recent analyses + category filtering
   const [filterCategory, setFilterCategory] = useState<string>('All');
+  const analyses = RECENT_ANALYSES;
+  const filteredAnalyses = useMemo(() => {
+    if (filterCategory === 'All') return analyses;
+    return analyses.filter((a) => {
+      const preset = SCENE_PRESETS.find((p) => p.id === a.sceneId);
+      return preset?.category === filterCategory;
+    });
+  }, [filterCategory, analyses]);
 
-  const filteredAnalyses = filterCategory === 'All'
-    ? RECENT_ANALYSES
-    : RECENT_ANALYSES.filter(a => {
-        const preset = SCENE_PRESETS.find(p => p.id === a.sceneId);
-        return preset?.category === filterCategory;
+  // Handle Preset Selection
+  const handleSelectPreset = (preset: ScenePreset) => {
+    setSelectedPreset(preset);
+    setCustomMetadata(null);
+    setCurrentCoords(preset.coordinates);
+    setMetrics(preset.defaultMetrics);
+    setSpectralPoints(preset.spectralPoints);
+    setProcessingState({ status: 'idle', progress: 0, elapsedSeconds: 0 });
+  };
+
+  // Handle File Upload
+  const handleFileUpload = async (file: File) => {
+    try {
+      setProcessingState({
+        status: 'uploading',
+        stage: 'Uploading and parsing GeoTIFF headers with Rasterio...',
+        progress: 10,
+        elapsedSeconds: 0,
       });
+
+      const meta = await geoSRApi.inspectGeoTIFF(file);
+      setCustomMetadata(meta);
+      setCurrentCoords(meta.center);
+
+      // Set custom preview image if available
+      if (meta.previewUrl) {
+        setSelectedPreset((prev) => ({
+          ...prev,
+          title: meta.filename,
+          location: `Uploaded GeoTIFF (${meta.crs.split(' ')[0]})`,
+          lowResImageUrl: meta.previewUrl || prev.lowResImageUrl,
+          coordinates: meta.center,
+          crs: meta.crs,
+        }));
+      }
+
+      setProcessingState({
+        status: 'idle',
+        progress: 0,
+        elapsedSeconds: 0,
+      });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Could not parse GeoTIFF headers. Please ensure the file is valid.';
+      console.error('Failed to parse uploaded file:', err);
+      setProcessingState({
+        status: 'error',
+        progress: 0,
+        elapsedSeconds: 0,
+        errorMessage: errMsg,
+      });
+      alert(`Upload Error: ${errMsg}`);
+    }
+  };
+
+  // Run Super-Resolution Pipeline
+  const handleRunSuperResolution = async () => {
+    setProcessingState({
+      status: 'processing',
+      stage: 'Initializing Sentinel-2 SRM Pipeline...',
+      progress: 5,
+      elapsedSeconds: 0,
+    });
+
+    try {
+      const result = await geoSRApi.submitSuperResolutionJob(
+        {
+          jobId: customMetadata?.jobId,
+          presetId: selectedPreset.id,
+          model: selectedModel,
+          scaleFactor: scaleFactor,
+          bandCombination: bandCombination,
+          overlapPercent: overlapPercent,
+          tileSize: 256,
+          useTiling: true,
+        },
+        (progress) => {
+          setProcessingState({
+            status: progress.status === 'completed' ? 'completed' : 'processing',
+            stage: progress.stage,
+            progress: progress.progressPercent,
+            elapsedSeconds: Math.round(progress.elapsedMs / 1000),
+          });
+
+          if (progress.metrics) {
+            setMetrics(progress.metrics);
+          }
+        }
+      );
+
+      if (result.metrics) {
+        setMetrics(result.metrics);
+      }
+
+      // Update preset visualizer URLs if custom file was processed
+      if (result.superResImageUrl || result.uncertaintyMapUrl) {
+        setSelectedPreset((prev) => ({
+          ...prev,
+          superResImageUrl: result.superResImageUrl || prev.superResImageUrl,
+          uncertaintyMapUrl: result.uncertaintyMapUrl || prev.uncertaintyMapUrl,
+        }));
+      }
+    } catch (e: unknown) {
+      const errMsg = e instanceof Error ? e.message : 'Super-Resolution inference failed';
+      setProcessingState({
+        status: 'error',
+        progress: 0,
+        elapsedSeconds: 0,
+        errorMessage: errMsg,
+      });
+
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -87,6 +233,15 @@ export default function DashboardPage() {
             >
               <BarChart3 className="w-4 h-4" />
               Model Benchmarks
+            </Link>
+
+            <Link
+              href="/demo"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-semibold text-sm shadow-lg shadow-amber-950/50 hover:shadow-amber-900/60 transition-all group"
+            >
+              <Zap className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+              Launch SIH Demo
+              <ArrowRight className="w-4 h-4 ml-1" />
             </Link>
           </div>
         </div>
@@ -201,28 +356,28 @@ export default function DashboardPage() {
               </h3>
             </div>
             <span className="text-xs text-slate-400 font-mono hidden sm:inline">
-              Pre-loaded Sentinel-2 L2A Scenes
+              Precomputed Real-Metric Demonstration Scenes
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5">
-            {SCENE_PRESETS.map((preset) => (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-2.5">
+            {SIH_DEMO_SCENES.map((scene) => (
               <Link
-                key={preset.id}
-                href={`/results/${preset.id}`}
+                key={scene.id}
+                href={`/demo/${scene.id}`}
                 className="p-3 rounded-xl bg-slate-950/80 hover:bg-cyan-950/50 border border-slate-800 hover:border-cyan-500/50 transition-all text-left group flex flex-col justify-between space-y-2"
               >
                 <div>
                   <div className="flex items-center justify-between text-[10px] font-mono text-slate-500">
-                    <span>{preset.category}</span>
-                    <span className="text-cyan-400 font-bold">4x SR</span>
+                    <span>{scene.category}</span>
+                    <span className="text-cyan-400 font-bold">{scene.scale_factor}x SR</span>
                   </div>
                   <div className="text-xs font-semibold text-white group-hover:text-cyan-300 transition-colors line-clamp-1 mt-1">
-                    {preset.title.split('(')[0]}
+                    {scene.title}
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 pt-1 border-t border-slate-800/60">
-                  <span>PSNR: {preset.defaultMetrics.psnr}dB</span>
+                  <span>PSNR: {scene.metrics.psnr != null ? `${scene.metrics.psnr.toFixed(2)}` : '—'}dB</span>
                   <ArrowRight className="w-3 h-3 text-cyan-400 group-hover:translate-x-1 transition-transform" />
                 </div>
               </Link>

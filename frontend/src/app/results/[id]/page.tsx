@@ -1,111 +1,136 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
-import { 
-  CheckCircle2, 
-  Download, 
-  FileText, 
-  Map, 
-  Sparkles, 
-  ShieldCheck, 
-  Compass, 
-  Clock, 
-  Layers, 
-  Activity
+import {
+  CheckCircle2,
+  Download,
+  FileText,
+  Map,
+  Sparkles,
+  ShieldCheck,
+  Compass,
+  Layers,
 } from 'lucide-react';
 import { ImageComparison } from '../../../components/ImageComparison';
 import { MetricCard } from '../../../components/MetricCard';
-import { ConfidenceMap } from '../../../components/ConfidenceMap';
 import { StatusBadge } from '../../../components/StatusBadge';
+import { ValidationSummary } from '../../../components/ValidationSummary';
 import { SCENE_PRESETS } from '../../../lib/mockData';
-import { BandCombination, ScenePreset, ValidationMetrics } from '../../../types/geosr';
+import {
+  BandCombination,
+  ScenePreset,
+  SpectralPoint,
+  ValidationMetrics,
+  ValidationReport,
+  JobResultsResponse,
+} from '../../../types/geosr';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
+
+function fmt(v: number | null | undefined, digits = 2): string {
+  if (v === null || v === undefined) return 'N/A';
+  return v.toFixed(digits);
+}
 
 export default function ResultsPage() {
   const params = useParams();
   const id = typeof params?.id === 'string' ? params.id : 'geosr_delhi_01';
 
-  // Match preset scene
-  const matchedPreset: ScenePreset = SCENE_PRESETS.find(
-    (p) => p.id === id || id.includes(p.id.replace('s2_', ''))
-  ) || SCENE_PRESETS[0];
+  const matchedPreset: ScenePreset =
+    SCENE_PRESETS.find((p) => p.id === id || id.includes(p.id.replace('s2_', ''))) ||
+    SCENE_PRESETS[0];
 
   const [bandCombo, setBandCombo] = useState<BandCombination>('RGB');
   const [downloadNotification, setDownloadNotification] = useState<string | null>(null);
+  const [results, setResults] = useState<JobResultsResponse | null>(null);
+  const [report, setReport] = useState<ValidationReport | null>(null);
 
-  const metrics: ValidationMetrics = matchedPreset.defaultMetrics;
+  const isReal = !!results && !results.is_demo && !!report;
+  const isDemo = !isReal;
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const r = await fetch(`${API_BASE}/api/jobs/${id}/results`, { cache: 'no-store' });
+        if (r.ok) {
+          const data = (await r.json()) as JobResultsResponse;
+          if (!cancelled) setResults(data);
+        }
+      } catch {
+        if (!cancelled) setResults(null);
+      }
+      try {
+        const rp = await fetch(`${API_BASE}/api/jobs/${id}/validation-report`, { cache: 'no-store' });
+        if (rp.ok) {
+          const data = (await rp.json()) as ValidationReport;
+          if (!cancelled) setReport(data);
+        }
+      } catch {
+        if (!cancelled) setReport(null);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   const showNotification = (msg: string) => {
     setDownloadNotification(msg);
     setTimeout(() => setDownloadNotification(null), 4000);
   };
 
-  // Simulated GeoTIFF download
   const handleDownloadGeoTIFF = () => {
+    if (results?.download_url) {
+      window.open(results.download_url, '_blank', 'noopener,noreferrer');
+      showNotification(`Downloading Cloud-Optimized GeoTIFF via backend stream`);
+      return;
+    }
     const filename = `GeoSR_Sentinel2_4x_${matchedPreset.id}_EPSG32643.tif`;
     showNotification(`Downloading Cloud-Optimized GeoTIFF: ${filename}`);
-
-    // Create a mock blob download
-    const blob = new Blob([`GeoSR Cloud-Optimized GeoTIFF Mock Data for ${matchedPreset.title}`], {
-      type: 'image/tiff',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
-  // Simulated Report download
   const handleDownloadReport = () => {
-    const filename = `GeoSR_Validation_Report_${matchedPreset.id}.json`;
-    showNotification(`Downloading SIH Compliance Report: ${filename}`);
-
-    const reportData = {
-      project: 'GeoSR — AI Satellite Super-Resolution Mapping',
-      sihProblemStatement: 'SIH 2026 #26142',
-      disclaimer: 'DEMO DATA — Simulated AI Inference for SIH 2026 Prototype',
-      scene: {
-        id: matchedPreset.id,
-        title: matchedPreset.title,
-        location: matchedPreset.location,
-        crs: matchedPreset.crs,
-        cloudCoverPercent: matchedPreset.cloudCoverPercent,
-        acquisitionDate: matchedPreset.acquisitionDate,
-      },
-      resolution: {
-        inputGsdMeters: 10.0,
-        outputGsdMeters: 2.5,
-        scaleFactor: 4,
-      },
-      metrics: {
-        psnrDb: metrics.psnr,
-        ssim: metrics.ssim,
-        samDegrees: metrics.sam,
-        ergas: metrics.ergas,
-        uiqi: metrics.uiqi,
-        inferenceTimeMs: metrics.inferenceTimeMs,
-      },
-      spectralPreservation: matchedPreset.spectralPoints,
-      exportedAt: new Date().toISOString(),
-    };
-
-    const blob = new Blob([JSON.stringify(reportData, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (results?.validation_report_url) {
+      window.open(results.validation_report_url, '_blank', 'noopener,noreferrer');
+      showNotification(`Downloading validation report`);
+      return;
+    }
+    showNotification(
+      report
+        ? `Downloading validation report: GeoSR_Validation_Report_${matchedPreset.id}.json`
+        : `Downloading SIH Compliance Report: GeoSR_Validation_Report_${matchedPreset.id}.json`
+    );
   };
+
+  // Real metrics come from the validation report; demo metrics come from the preset.
+  const realMetrics: ValidationReport | null = report;
+  const demoMetrics: ValidationMetrics = matchedPreset.defaultMetrics;
+
+  const referenceAvailable = !!report?.reference_available;
+
+  type WireSpectralPoint = {
+    band: string;
+    name: string;
+    wavelength_nm?: number;
+    original_reflectance?: number;
+    sr_reflectance?: number;
+    diff_percent?: number;
+  };
+  const spectralRows: SpectralPoint[] =
+    isReal && results?.spectral_points?.length
+      ? (results.spectral_points as WireSpectralPoint[]).map((sp) => ({
+          band: (sp.band || 'B02') as SpectralPoint['band'],
+          name: sp.name || sp.band,
+          wavelengthNm: sp.wavelength_nm ?? 0,
+          originalReflectance: sp.original_reflectance ?? 0,
+          srReflectance: sp.sr_reflectance ?? 0,
+          diffPercent: sp.diff_percent ?? 0,
+        }))
+      : matchedPreset.spectralPoints;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 py-8 px-4 sm:px-6 lg:px-8 space-y-8">
@@ -118,22 +143,25 @@ export default function ResultsPage() {
       )}
 
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Prominent Demo Watermark Alert */}
-        <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 flex items-center justify-between gap-4 text-xs font-mono text-amber-300">
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded bg-amber-900/80 font-bold border border-amber-700">
-              DEMO DATA
-            </span>
-            <span>
-              Simulated AI Inference & Sentinel-2 Telemetry for SIH 2026 Prototype Demonstration.
+        {/* Demo watermark when no real backend data */}
+        {isDemo && (
+          <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 flex items-center justify-between gap-4 text-xs font-mono text-amber-300">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded bg-amber-900/80 font-bold border border-amber-700">
+                DEMO DATA
+              </span>
+              <span>
+                No live backend results for this job. Showing demonstration data. Metrics are simulated
+                because no HR ground truth is attached to demo scenes.
+              </span>
+            </div>
+            <span className="hidden md:inline text-amber-400/70">
+              Connect a backend + trained checkpoint to enable real validation.
             </span>
           </div>
-          <span className="hidden md:inline text-amber-400/70">
-            Real deep-learning model weights will attach in Phase 2
-          </span>
-        </div>
+        )}
 
-        {/* Header with Title, Badges & Top Actions */}
+        {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
           <div>
             <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 uppercase tracking-wider mb-1">
@@ -150,11 +178,10 @@ export default function ResultsPage() {
               <span>•</span>
               <span>Cloud: {matchedPreset.cloudCoverPercent}%</span>
               <span>•</span>
-              <StatusBadge status="completed" />
+              <StatusBadge status={isReal ? 'completed' : 'completed'} />
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2.5">
             <Link
               href={`/explorer?scene=${matchedPreset.id}`}
@@ -163,7 +190,6 @@ export default function ResultsPage() {
               <Map className="w-3.5 h-3.5 text-cyan-400" />
               Open in GIS Explorer
             </Link>
-
             <button
               onClick={handleDownloadGeoTIFF}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold tracking-wide transition-all shadow-md shadow-cyan-950/50"
@@ -171,43 +197,45 @@ export default function ResultsPage() {
               <Download className="w-3.5 h-3.5" />
               Download GeoTIFF
             </button>
-
-            <button
-              onClick={handleDownloadReport}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300 transition-colors"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              Evaluation Report
-            </button>
+            {report && (
+              <button
+                onClick={handleDownloadReport}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300 transition-colors"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                Validation Report
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Resolution Enhancement Banner Pill */}
+        {/* Resolution Enhancement Banner */}
         <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-cyan-950/40 to-slate-900 border border-cyan-800/50 flex flex-wrap items-center justify-between gap-4 font-mono">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-400">Input Resolution:</span>
               <span className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-200 font-bold text-xs">
-                10.0m GSD
+                 {fmt(realMetrics?.input_gsd_meters ?? 10, 1)}m GSD
               </span>
             </div>
             <span className="text-cyan-400 text-sm font-bold">→</span>
             <div className="flex items-center gap-2">
               <span className="text-xs text-cyan-300">Super-Resolved Output:</span>
               <span className="px-2.5 py-1 rounded-lg bg-cyan-950 border border-cyan-500 text-cyan-300 font-bold text-xs shadow-sm">
-                2.5m GSD (4x Boost)
+                {realMetrics?.output_gsd_meters
+                  ? `${realMetrics.output_gsd_meters.toFixed(1)}m GSD (${4}x Boost)`
+                  : '2.5m GSD (4x Boost)'}
               </span>
             </div>
           </div>
-
           <div className="text-xs text-slate-400 flex items-center gap-4">
             <span>Pixel Density: <strong className="text-white">16x Increase</strong></span>
             <span className="text-slate-700">•</span>
-            <span>Latency: <strong className="text-emerald-400">{metrics.inferenceTimeMs} ms</strong></span>
+            <span>Latency: <strong className="text-emerald-400">{fmt(realMetrics ? undefined : demoMetrics.inferenceTimeMs)} ms</strong></span>
           </div>
         </div>
 
-        {/* Main Interactive Image Comparison Slider */}
+        {/* Image Comparison */}
         <section className="space-y-2">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-200 font-mono flex items-center gap-2">
@@ -215,17 +243,17 @@ export default function ResultsPage() {
               High-Fidelity Spatial Comparison
             </h2>
             <span className="text-xs font-mono text-slate-400 hidden sm:inline">
-              Drag central slider to wipe between 10m Input and 2.5m Super-Resolved Output
+              Drag central slider to wipe between {fmt(realMetrics?.input_gsd_meters ?? 10, 1)}m Input and{' '}
+              {fmt(realMetrics?.output_gsd_meters ?? 2.5, 1)}m Super-Resolved Output
             </span>
           </div>
-
           <ImageComparison
-            lowResImageUrl={matchedPreset.lowResImageUrl}
-            superResImageUrl={matchedPreset.superResImageUrl}
-            uncertaintyMapUrl={matchedPreset.uncertaintyMapUrl}
+            lowResImageUrl={results?.low_res_preview_url || matchedPreset.lowResImageUrl}
+            superResImageUrl={results?.super_res_preview_url || matchedPreset.superResImageUrl}
+            uncertaintyMapUrl={results?.uncertainty_map_url || matchedPreset.uncertaintyMapUrl}
             title={matchedPreset.title}
             coordinates={matchedPreset.coordinates}
-            scaleFactor={4}
+            scaleFactor={realMetrics?.scale_factor ?? 4}
             initialMode="swipe"
             bandCombination={bandCombo}
             onBandCombinationChange={setBandCombo}
@@ -236,88 +264,128 @@ export default function ResultsPage() {
         <section className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-200 font-mono flex items-center gap-2">
-              <Activity className="w-4 h-4 text-cyan-400" />
-              Quantitative Validation Metrics
+              <Compass className="w-4 h-4 text-cyan-400" />
+              {isReal ? 'Quantitative Validation Metrics' : 'Quantitative Validation Metrics (Demo)'}
             </h2>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/80 text-amber-400 border border-amber-800/60">
-              DEMO BENCHMARK VALUES
-            </span>
+            {isDemo && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/80 text-amber-400 border border-amber-800/60">
+                DEMO BENCHMARK VALUES
+              </span>
+            )}
+            {isReal && !referenceAvailable && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/80 text-amber-400 border border-amber-800/60">
+                Reference unavailable — metrics are N/A
+              </span>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <MetricCard
-              label="Peak Signal-to-Noise Ratio"
-              value={metrics.psnr}
-              unit="dB"
-              delta="+6.42 dB"
-              deltaType="positive"
-              benchmark="> 30 dB"
-              description="Mathematical measurement of reconstruction sharpness and fidelity."
-              icon={<Sparkles className="w-5 h-5" />}
-              isDemo={true}
-            />
-
-            <MetricCard
-              label="Structural Similarity (SSIM)"
-              value={metrics.ssim}
-              delta="+0.182"
-              deltaType="positive"
-              benchmark="> 0.88"
-              description="Evaluates edge structures, building shapes, and road continuities."
-              icon={<ShieldCheck className="w-5 h-5" />}
-              isDemo={true}
-            />
-
-            <MetricCard
-              label="Spectral Angle Mapper (SAM)"
-              value={metrics.sam}
-              unit="°"
-              delta="-4.80°"
-              deltaType="positive"
-              benchmark="< 3.0°"
-              description="Measures multispectral vector angle deviation across all 12 bands."
-              icon={<Compass className="w-5 h-5" />}
-              isDemo={true}
-            />
-
-            <MetricCard
-              label="Global Dimensionless Error (ERGAS)"
-              value={metrics.ergas}
-              delta="-1.58"
-              deltaType="positive"
-              benchmark="< 2.50"
-              description="Relative dimensionless synthesis error across all spectral channels."
-              icon={<Clock className="w-5 h-5" />}
-              isDemo={true}
-            />
+            {isReal ? (
+              <>
+                <MetricCard
+                  label="Peak Signal-to-Noise Ratio"
+                  value={fmt(realMetrics?.psnr, 2)}
+                  unit="dB"
+                  benchmark="> 30 dB"
+                  description="Reconstruction fidelity vs HR ground truth."
+                  icon={<Sparkles className="w-5 h-5" />}
+                />
+                <MetricCard
+                  label="Structural Similarity (SSIM)"
+                  value={fmt(realMetrics?.ssim, 3)}
+                  benchmark="> 0.88"
+                  description="Edge structures, building shapes, road continuity."
+                  icon={<ShieldCheck className="w-5 h-5" />}
+                />
+                <MetricCard
+                  label="Spectral Angle Mapper (SAM)"
+                  value={fmt(realMetrics?.sam, 2)}
+                  unit="°"
+                  benchmark="< 3.0°"
+                  description="Multispectral vector angle deviation."
+                  icon={<Compass className="w-5 h-5" />}
+                />
+                <MetricCard
+                  label="Global Error (ERGAS)"
+                  value={fmt(realMetrics?.ergas, 2)}
+                  benchmark="< 2.50"
+                  description="Relative dimensionless spectral error."
+                  icon={<Layers className="w-5 h-5" />}
+                />
+              </>
+            ) : (
+              <>
+                <MetricCard
+                  label="Peak Signal-to-Noise Ratio"
+                  value={fmt(demoMetrics.psnr)}
+                  unit="dB"
+                  delta="+6.42 dB"
+                  deltaType="positive"
+                  benchmark="> 30 dB"
+                  description="Mathematical measurement of reconstruction sharpness and fidelity."
+                  icon={<Sparkles className="w-5 h-5" />}
+                  isDemo={true}
+                />
+                <MetricCard
+                  label="Structural Similarity (SSIM)"
+                  value={fmt(demoMetrics.ssim, 3)}
+                  delta="+0.182"
+                  deltaType="positive"
+                  benchmark="> 0.88"
+                  description="Evaluates edge structures, building shapes, and road continuities."
+                  icon={<ShieldCheck className="w-5 h-5" />}
+                  isDemo={true}
+                />
+                <MetricCard
+                  label="Spectral Angle Mapper (SAM)"
+                  value={fmt(demoMetrics.sam)}
+                  unit="°"
+                  delta="-4.80°"
+                  deltaType="positive"
+                  benchmark="< 3.0°"
+                  description="Measures multispectral vector angle deviation."
+                  icon={<Compass className="w-5 h-5" />}
+                  isDemo={true}
+                />
+                <MetricCard
+                  label="Global Dimensionless Error (ERGAS)"
+                  value={fmt(demoMetrics.ergas)}
+                  delta="-1.58"
+                  deltaType="positive"
+                  benchmark="< 2.50"
+                  description="Relative dimensionless synthesis error across all spectral channels."
+                  icon={<Layers className="w-5 h-5" />}
+                  isDemo={true}
+                />
+              </>
+            )}
           </div>
         </section>
 
-        {/* Confidence & Uncertainty Map Component */}
-        <section className="space-y-3">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-200 font-mono flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-cyan-400" />
-            Model Epistemic Confidence & Anomaly Heatmap
-          </h2>
-          <ConfidenceMap uncertaintyMapUrl={matchedPreset.uncertaintyMapUrl} />
-        </section>
+        {/* Validation Summary (reference note + uncertainty + spectral) */}
+        <ValidationSummary
+          report={realMetrics}
+          isDemo={isDemo}
+          uncertaintyMapUrl={results?.uncertainty_map_url || matchedPreset.uncertaintyMapUrl}
+        />
 
         {/* Spectral Reflectance Profile Table */}
         <section className="p-5 rounded-2xl bg-slate-900/80 border border-slate-800 space-y-4 font-mono">
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
-                12-Band Multispectral Preservation Table
+                4-Band Multispectral Preservation Table
               </h3>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Comparison of raw Sentinel-2 BOA reflectance vs Super-Resolved reflectance values.
+                {referenceAvailable
+                  ? 'Comparison of input reflectance vs super-resolved reflectance (real SR model).'
+                  : 'Input reflectance vs super-resolved reflectance. Reflectance values are model-inferred where no reference exists.'}
               </p>
             </div>
             <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
-              Mean Deviation: &lt; 1.2%
+              {referenceAvailable ? 'Reference-validated' : 'No ground-truth reference'}
             </span>
           </div>
-
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
@@ -331,7 +399,7 @@ export default function ResultsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-300">
-                {matchedPreset.spectralPoints.map((point) => (
+                {spectralRows.map((point) => (
                   <tr key={point.band} className="hover:bg-slate-950/40 transition-colors">
                     <td className="py-2.5 font-bold text-cyan-400">{point.band}</td>
                     <td className="py-2.5 text-slate-200">{point.name}</td>
