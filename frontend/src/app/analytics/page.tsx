@@ -48,11 +48,11 @@ export default function AnalyticsPage() {
         <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 flex items-center justify-between gap-4 text-xs font-mono text-amber-300">
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded bg-amber-900/80 font-bold border border-amber-700">
-              DEMO DATA
+                SAMPLE BENCHMARKS (illustrative)
             </span>
-            <span>
-              Simulated Empirical Benchmarks across Sentinel-2 Test Datasets for SIH 2026.
-            </span>
+              <span>
+                Sample benchmarks across Sentinel-2 test datasets for SIH 2026 (illustrative).
+              </span>
           </div>
           <span className="hidden md:inline text-amber-400/70">
             NVIDIA RTX 4090 Test Environment

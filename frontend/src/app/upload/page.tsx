@@ -25,6 +25,7 @@ import {
   ScenePreset 
 } from '../../types/geosr';
 import { geoSRApi } from '../../services/api';
+import { UPLOAD_DEMO_MODE, buildDemoMetadata } from '../../lib/uploadDemo';
 
 export default function UploadPage() {
   const router = useRouter();
@@ -62,8 +63,12 @@ export default function UploadPage() {
     setIsInspecting(true);
 
     try {
-      const inspected = await geoSRApi.inspectGeoTIFF(file);
-      setMetadata(inspected);
+      if (UPLOAD_DEMO_MODE) {
+        setMetadata(buildDemoMetadata(file));
+      } else {
+        const inspected = await geoSRApi.inspectGeoTIFF(file);
+        setMetadata(inspected);
+      }
     } catch (err) {
       console.error('Inspection error:', err);
     } finally {
@@ -120,7 +125,40 @@ export default function UploadPage() {
   };
 
   // Start analysis and redirect to /processing/[id]
-  const handleStartAnalysis = () => {
+  const handleStartAnalysis = async () => {
+    // Uploaded TIFF: POST /api/upload already created a real backend job
+    // (metadata.jobId). Process THAT job and route to its real results.
+    if (selectedFile) {
+      if (UPLOAD_DEMO_MODE) {
+        router.push('/results/demo-upload');
+        return;
+      }
+
+      const jobId = metadata?.jobId;
+      if (!jobId) {
+        window.alert('Upload job ID is missing. Please upload the TIFF again.');
+        return;
+      }
+
+      await geoSRApi.submitSuperResolutionJob(
+        {
+          jobId,
+          model: selectedModel,
+          scaleFactor,
+          bandCombination,
+          overlapPercent,
+          tileSize: 256,
+          useTiling: true,
+          presetId: selectedPreset?.id,
+        },
+        () => {}
+      );
+
+      router.push(`/results/${jobId}`);
+      return;
+    }
+
+    // Preset/demo path — preserve existing behavior.
     const analysisId = selectedPreset
       ? selectedPreset.id
       : 'geosr_' + Math.random().toString(36).substring(2, 9);

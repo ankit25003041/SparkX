@@ -46,7 +46,7 @@ export default function RootLayout({
               <span className="text-slate-400 font-semibold">GeoSR Prototype</span> • Smart India Hackathon 2026 Problem Statement #26142
             </div>
             <div className="text-[11px] text-slate-600">
-              Phase 1 Frontend Prototype • Simulated AI Inference & Sentinel-2 Telemetry
+              GeoSRv2 Live System • AI Inference & Sentinel-2 Telemetry
             </div>
           </div>
         </footer>

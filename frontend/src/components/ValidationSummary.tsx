@@ -23,7 +23,7 @@ export const ValidationSummary: React.FC<ValidationSummaryProps> = ({ report, is
         <div className="text-[11px] text-slate-400 flex items-start gap-2 bg-slate-950/50 p-2.5 rounded-xl border border-slate-800/60">
           <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0 mt-0.5" />
           <span>
-            DEMO: simulated confidence. Real uncertainty is derived from
+            Sample confidence preview. Real uncertainty is derived from
             self-consistency (LR↔SR round-trip) or an input-perturbation ensemble.
           </span>
         </div>

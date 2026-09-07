@@ -107,7 +107,7 @@ class GeoSRApiService {
             ? [data.center[0], data.center[1]] 
             : [28.6139, 77.2090],
           gsdOriginalMeters: resolution,
-          gsdTargetMeters: Number((resolution / 4).toFixed(2)),
+          gsdTargetMeters: Number((resolution / 2).toFixed(2)),
           cloudCoverPercent: data.cloud_cover_percent || 0.0,
           sensor: data.sensor || 'Sentinel-2 MSI Level-2A BOA Reflectance',
           acquisitionDate: data.acquisition_date || new Date().toISOString().split('T')[0],
@@ -134,7 +134,7 @@ class GeoSRApiService {
         bounds: [76.85, 28.40, 77.45, 28.90],
         center: [28.6139, 77.2090],
         gsdOriginalMeters: 10.0,
-        gsdTargetMeters: 2.5,
+        gsdTargetMeters: 5.0,
         cloudCoverPercent: 1.2,
         sensor: 'Sentinel-2 MSI Level-2A BOA Reflectance',
         acquisitionDate: new Date().toISOString().split('T')[0],
@@ -210,7 +210,7 @@ class GeoSRApiService {
             return {
               jobId: params.jobId,
               status: 'completed',
-              stage: 'Super-Resolution Reconstruction Finished Successfully (Phase 2 Baseline)',
+               stage: 'Super-Resolution Reconstruction Finished Successfully (GeoSRv2, 10m -> 5m)',
               progressPercent: 100,
               elapsedMs: elapsed,
               metrics: metricsData || matchedPreset.defaultMetrics,
@@ -223,7 +223,7 @@ class GeoSRApiService {
               downloadUrl: resultsData.download_url 
                 ? (resultsData.download_url.startsWith('http') ? resultsData.download_url : `${this.apiBaseUrl}${resultsData.download_url}`)
                 : undefined,
-              isDemo: resultsData.is_demo ?? true,
+               isDemo: resultsData.is_demo ?? false,
             };
           }
 

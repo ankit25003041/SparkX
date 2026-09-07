@@ -71,6 +71,7 @@ def describe_checkpoint(checkpoint_path) -> dict:
     Any read failure is non-fatal and reports ``is_geosr_v2=False``.
     """
     try:
+        import torch  # noqa: F401 - lazy import keeps torch an optional dependency
         ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     except Exception as e:  # pragma: no cover - best-effort
         return {"is_geosr_v2": False, "native_scale": None,

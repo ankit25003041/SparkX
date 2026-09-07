@@ -292,7 +292,7 @@ export default function GeoSRDashboardPage() {
               Processing Statistics & Model Validation
             </h2>
             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/80 text-amber-400 border border-amber-800/60">
-              DEMO DATA (SIMULATED)
+              SAMPLE DATA (illustrative KPIs)
             </span>
           </div>
 

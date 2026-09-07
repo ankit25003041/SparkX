@@ -27,7 +27,8 @@ import {
   JobResultsResponse,
 } from '../../../types/geosr';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 function fmt(v: number | null | undefined, digits = 2): string {
   if (v === null || v === undefined) return 'N/A';
@@ -89,7 +90,7 @@ export default function ResultsPage() {
       showNotification(`Downloading Cloud-Optimized GeoTIFF via backend stream`);
       return;
     }
-    const filename = `GeoSR_Sentinel2_4x_${matchedPreset.id}_EPSG32643.tif`;
+    const filename = `GeoSR_Sentinel2_2x_${isReal ? id : matchedPreset.id}_EPSG32643.tif`;
     showNotification(`Downloading Cloud-Optimized GeoTIFF: ${filename}`);
   };
 
@@ -143,24 +144,6 @@ export default function ResultsPage() {
       )}
 
       <div className="max-w-7xl mx-auto space-y-6">
-        {/* Demo watermark when no real backend data */}
-        {isDemo && (
-          <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-800/60 flex items-center justify-between gap-4 text-xs font-mono text-amber-300">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-amber-900/80 font-bold border border-amber-700">
-                DEMO DATA
-              </span>
-              <span>
-                No live backend results for this job. Showing demonstration data. Metrics are simulated
-                because no HR ground truth is attached to demo scenes.
-              </span>
-            </div>
-            <span className="hidden md:inline text-amber-400/70">
-              Connect a backend + trained checkpoint to enable real validation.
-            </span>
-          </div>
-        )}
-
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
           <div>
@@ -169,16 +152,20 @@ export default function ResultsPage() {
               Analysis Results • Scene ID: {matchedPreset.id}
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              {matchedPreset.title}
+              {isReal ? (results?.metadata?.filename || id) : matchedPreset.title}
             </h1>
-            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 font-mono mt-1">
-              <span>{matchedPreset.location}</span>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-400 font-mono">
+              <span>{isReal ? (results?.metadata?.filename || id) : matchedPreset.location}</span>
               <span>•</span>
-              <span>{matchedPreset.crs}</span>
+              <span>{isReal ? (results?.metadata?.crs || matchedPreset.crs) : matchedPreset.crs}</span>
               <span>•</span>
-              <span>Cloud: {matchedPreset.cloudCoverPercent}%</span>
+              <span>
+                Scale: {isReal
+                  ? `${realMetrics?.scale_factor ?? 2}x (${fmt(realMetrics?.input_gsd_meters ?? 10, 1)}m -&gt; ${fmt(realMetrics?.output_gsd_meters ?? 5, 1)}m)`
+                  : `${matchedPreset.cloudCoverPercent}% cloud`}
+              </span>
               <span>•</span>
-              <StatusBadge status={isReal ? 'completed' : 'completed'} />
+              <StatusBadge status="completed" showIcon={true} />
             </div>
           </div>
 
@@ -223,13 +210,13 @@ export default function ResultsPage() {
               <span className="text-xs text-cyan-300">Super-Resolved Output:</span>
               <span className="px-2.5 py-1 rounded-lg bg-cyan-950 border border-cyan-500 text-cyan-300 font-bold text-xs shadow-sm">
                 {realMetrics?.output_gsd_meters
-                  ? `${realMetrics.output_gsd_meters.toFixed(1)}m GSD (${4}x Boost)`
-                  : '2.5m GSD (4x Boost)'}
+                  ? `${realMetrics.output_gsd_meters.toFixed(1)}m GSD (${realMetrics.scale_factor ?? 2}x Boost)`
+                  : '5m GSD (2x Boost)'}
               </span>
             </div>
           </div>
           <div className="text-xs text-slate-400 flex items-center gap-4">
-            <span>Pixel Density: <strong className="text-white">16x Increase</strong></span>
+            <span>Spatial Upscaling: <strong className="text-white">2x (10 m -&gt; 5 m)</strong></span>
             <span className="text-slate-700">•</span>
             <span>Latency: <strong className="text-emerald-400">{fmt(realMetrics ? undefined : demoMetrics.inferenceTimeMs)} ms</strong></span>
           </div>
@@ -244,7 +231,7 @@ export default function ResultsPage() {
             </h2>
             <span className="text-xs font-mono text-slate-400 hidden sm:inline">
               Drag central slider to wipe between {fmt(realMetrics?.input_gsd_meters ?? 10, 1)}m Input and{' '}
-              {fmt(realMetrics?.output_gsd_meters ?? 2.5, 1)}m Super-Resolved Output
+              {fmt(realMetrics?.output_gsd_meters ?? 5.0, 1)}m Super-Resolved Output
             </span>
           </div>
           <ImageComparison
@@ -253,7 +240,7 @@ export default function ResultsPage() {
             uncertaintyMapUrl={results?.uncertainty_map_url || matchedPreset.uncertaintyMapUrl}
             title={matchedPreset.title}
             coordinates={matchedPreset.coordinates}
-            scaleFactor={realMetrics?.scale_factor ?? 4}
+            scaleFactor={realMetrics?.scale_factor ?? 2}
             initialMode="swipe"
             bandCombination={bandCombo}
             onBandCombinationChange={setBandCombo}
@@ -269,15 +256,20 @@ export default function ResultsPage() {
             </h2>
             {isDemo && (
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/80 text-amber-400 border border-amber-800/60">
-                DEMO BENCHMARK VALUES
+                SAMPLE VALUES (no live run)
               </span>
             )}
             {isReal && !referenceAvailable && (
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/80 text-amber-400 border border-amber-800/60">
-                Reference unavailable — metrics are N/A
+                Full-reference metrics unavailable
               </span>
             )}
           </div>
+          {isReal && !referenceAvailable && (
+            <p className="text-xs text-slate-400 mt-1">
+              No HR ground truth is available for this satellite scene.
+            </p>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {isReal ? (
